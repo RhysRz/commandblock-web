@@ -38,10 +38,11 @@
     </aside>
     <section class="chat-area" id="chat">
       <header class="topbar"><strong>Commandblock</strong><button type="button" class="model-chip">เลือกโมเดล</button></header>
-      <div class="empty-chat"><span>✦</span><h2>เริ่มบทสนทนาใหม่</h2><p>เลือกโมเดล Cloud ของคุณใน Settings แล้วพิมพ์สิ่งที่ต้องการทำ</p></div>
+      <div id="chatMessages" class="empty-chat"><span>✦</span><h2>เริ่มบทสนทนาใหม่</h2><p>ตั้งค่า DeepSeek key แล้วพิมพ์สิ่งที่ต้องการทำ</p></div>
       <form class="composer"><label class="sr-only" for="message">ข้อความ</label><textarea id="message" rows="1" placeholder="พิมพ์งานที่ต้องการ…"></textarea><button class="send-button" type="submit" aria-label="ส่งข้อความ">↑</button></form>
     </section>
     <nav class="bottom-nav" aria-label="เมนูมือถือ"><button type="button">แชท</button><button type="button">ประวัติ</button><button type="button">โมเดล</button><button type="button">ตั้งค่า</button></nav>
+    <dialog id="settingsDialog"><form method="dialog" class="settings-card"><h2>Cloud model</h2><label for="cloudKey">DeepSeek API key</label><input id="cloudKey" type="password" placeholder="sk-..." autocomplete="off"><p>เก็บเฉพาะตอนเปิดหน้านี้</p><button id="saveSettings" value="save">บันทึกใน session</button></form></dialog>
   </main>
   <script type="module" src="js/app.js"></script>
 </body>
