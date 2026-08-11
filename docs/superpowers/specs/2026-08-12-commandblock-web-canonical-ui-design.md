@@ -14,7 +14,7 @@ The desktop UI remains the single visual and interaction source of truth.  The w
 2. `cloud-adapter.js` runs only in the hosted build.  It supplies the existing `/api/*` UI contract in the browser:
    - `state`, `models`, and `model` use browser session state.
    - `chat` authenticates through Supabase and calls the existing `chat` Edge Function using the user-provided DeepSeek key held in session storage only.
-   - `history` and `notes` use the current user’s Supabase data.
+   - `history` uses the current user’s Supabase data; notes remain in the current browser session until a dedicated notes schema is introduced.
 3. The adapter displays authentication as a full-page gate above the original Commandblock UI.  No second chat page or duplicate layout is rendered.
 4. Browser-incompatible desktop features (native folder selection, filesystem, terminal, changes, queue, preview, project skills, and startup scripts) return explicit “Desktop Connector required” results. They must never simulate local access or claim success.
 5. The GitHub Pages workflow builds the static site from the canonical desktop UI before uploading it.
