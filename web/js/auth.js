@@ -10,8 +10,9 @@ export function createAuthController(client, view) {
   }
 
   async function signIn(email, password) {
-    const { error } = await client.auth.signInWithPassword({ email, password });
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    if (data.session?.user) view.showAuthenticated(data.session.user, data.session);
   }
 
   async function sendPasswordReset(email) {
@@ -25,6 +26,6 @@ export function createAuthController(client, view) {
     if (error) throw error;
   }
 
-  client.auth.onAuthStateChange((_event, session) => session?.user ? view.showAuthenticated(session.user) : view.showUnauthenticated());
+  client.auth.onAuthStateChange((_event, session) => session?.user ? view.showAuthenticated(session.user, session) : view.showUnauthenticated());
   return { signUp, signIn, sendPasswordReset, signOut };
 }

@@ -3,7 +3,7 @@ import { getSupabaseConfig } from './config.js'; import { createAuthController }
 import { createSettingsStore } from './settings.js'; import { appendMessage, createConversation, sendCloudMessage } from './chat.js';
 export function start() {
  const authGate=document.querySelector('#authGate'),appGate=document.querySelector('#appGate'),status=document.querySelector('#authStatus'), email=document.querySelector('#authEmail'),password=document.querySelector('#authPassword'),name=document.querySelector('#authName'), dialog=document.querySelector('#settingsDialog'), key=document.querySelector('#cloudKey'), settings=createSettingsStore(); let client,user,session,conversation;
- const view={showAuthenticated:async(u)=>{user=u;session=(await client.auth.getSession()).data.session;authGate.hidden=true;appGate.hidden=false;},showUnauthenticated:()=>{authGate.hidden=false;appGate.hidden=true;},showNotice:t=>status.textContent=t};
+ const view={showAuthenticated:(u,activeSession)=>{user=u;session=activeSession;authGate.hidden=true;appGate.hidden=false;},showUnauthenticated:()=>{authGate.hidden=false;appGate.hidden=true;},showNotice:t=>status.textContent=t};
  try { const c=getSupabaseConfig(); client=createClient(c.url,c.anonKey); const auth=createAuthController(client,view);
   document.querySelector('#authForm').addEventListener('submit',async e=>{e.preventDefault();try{await auth.signIn(email.value,password.value)}catch(x){view.showNotice(x.message)}});
   document.querySelector('[data-auth-action="register"]').onclick=async()=>{try{await auth.signUp(email.value,password.value,name.value)}catch(x){view.showNotice(x.message)}};
