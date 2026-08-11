@@ -5,12 +5,11 @@ const test = require('node:test');
 
 const root = path.join(__dirname, '..');
 
-test('web shell exposes auth and application gates with PWA bootstrap', () => {
-  const html = fs.readFileSync(path.join(root, 'web', 'index.html'), 'utf8');
-  assert.match(html, /id="authGate"/);
-  assert.match(html, /id="appGate"/);
-  assert.match(html, /rel="manifest" href="manifest\.webmanifest"/);
-  assert.match(html, /type="module" src="js\/app\.js"/);
+test('Pages deployment builds and uploads the canonical Commandblock UI', () => {
+  const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'deploy-pages.yml'), 'utf8');
+  assert.match(workflow, /node scripts\/build-web\.mjs/);
+  assert.match(workflow, /path: site/);
+  assert.doesNotMatch(workflow, /path: web/);
 });
 
 test('public Supabase configuration rejects placeholder values', () => {

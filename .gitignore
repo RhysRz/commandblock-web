@@ -10,6 +10,7 @@ buff_session.json
 target/
 dist/
 output/
+site/
 installer/payload/
 Commandblock.exe
 buff.exe
