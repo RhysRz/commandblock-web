@@ -135,7 +135,7 @@
   function mountAuthGate() {
     const style = document.createElement('style');
     style.textContent = `#cb-cloud-gate{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#251044 0,#0d0918 58%,#07060d 100%);color:#f5efff;font-family:"Segoe UI","Noto Sans Thai",sans-serif}#cb-cloud-gate[hidden]{display:none}.cb-cloud-card{width:min(440px,100%);padding:32px;border:1px solid rgba(184,137,255,.35);border-radius:24px;background:rgba(23,14,43,.84);box-shadow:0 28px 80px rgba(0,0,0,.48);backdrop-filter:blur(18px)}.cb-cloud-card h1{margin:0 0 10px;font-size:28px}.cb-cloud-card p{color:#cdbfe8;line-height:1.6}.cb-cloud-card input{width:100%;margin-top:10px;padding:13px 14px;border:1px solid #5b3e84;border-radius:12px;background:#100a20;color:#fff;font:inherit}.cb-cloud-actions{display:grid;gap:10px;margin-top:18px}.cb-cloud-actions button{padding:12px;border:1px solid #7344ba;border-radius:12px;background:#271343;color:#fff;font:inherit;font-weight:700;cursor:pointer}.cb-cloud-actions button.primary{border:0;background:linear-gradient(135deg,#7034df,#a65cff)}.cb-cloud-status{min-height:24px;margin-top:14px;color:#bfeadf;font-size:13px}.cb-cloud-link{background:none!important;border:0!important;color:#c69aff!important;text-decoration:underline;font-weight:400!important}`;
-    style.textContent += `#settingsModal .set-sec:nth-of-type(2){display:none}@media (max-width: 760px){body{grid-template-columns:44px minmax(0,1fr);height:100dvh}#histpane,#rightpane{display:none}#chatpane{min-width:0}.chat-head{gap:7px;padding:10px}.chat-title .sub{display:none}.chat-title h1{font-size:15px}.pill#folderBtn{display:none}.chat-foot{padding:8px}.statusbar{font-size:10px}.feedback{display:none}.inputbox{min-height:46px}.logo img{width:34px;height:34px}.wrap{padding:14px 10px}.bubble{max-width:96%}}`;
+    style.textContent += `#settingsModal .set-sec:nth-of-type(2){display:none}#statsRight{display:none}#modelPill{max-width:none!important;overflow:visible!important}#cb-cloud-logout{margin-left:auto;flex-shrink:0;padding:3px 10px}@media (max-width: 760px){body{grid-template-columns:44px minmax(0,1fr);height:100dvh}#histpane,#rightpane{display:none}#chatpane{min-width:0}.chat-head{gap:7px;padding:10px}.chat-title .sub{display:none}.chat-title h1{font-size:15px}.pill#folderBtn{display:none}.chat-foot{padding:8px}.statusbar{font-size:10px}.feedback{display:none}.inputbox{min-height:46px}.logo img{width:34px;height:34px}.wrap{padding:14px 10px}.bubble{max-width:96%}}`;
     document.head.appendChild(style);
     const gate = document.createElement('section');
     gate.id = 'cb-cloud-gate';
@@ -153,7 +153,7 @@
     logout.className = 'pill';
     logout.type = 'button';
     logout.textContent = 'Log out';
-    document.querySelector('.chat-head')?.appendChild(logout);
+    document.querySelector('.statusbar')?.appendChild(logout);
     logout.addEventListener('click', async () => {
       const { error } = await client.auth.signOut();
       if (error) { window.alert(errorText(error)); return; }

@@ -23,4 +23,6 @@ test('web-only settings hide unavailable skills and expose a real logout action'
   assert.match(source, /logout\.id = 'cb-cloud-logout'/);
   assert.match(source, /client\.auth\.signOut\(\)/);
   assert.match(source, /cb-auth-pending/);
+  assert.match(source, /document\.querySelector\('\.statusbar'\)\?\.appendChild\(logout\)/);
+  assert.match(source, /#modelPill\{max-width:none!important;overflow:visible!important\}/);
 });
