@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#110b22">
+  <meta name="supabase-url" content="https://qympivgklmstrnhfaywn.supabase.co">
+  <meta name="supabase-anon-key" content="sb_publishable_UJMuyL3QY8lMEWJKZi3zAQ_NFKZY8TH">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+  <title>Commandblock — ผู้ช่วยพัฒนาโค้ด AI</title>
+</head>
+<body>
+  <main id="authGate" class="auth-gate" aria-labelledby="authTitle">
+    <section class="auth-card">
+      <div class="command-cube" aria-hidden="true">⌘</div>
+      <p class="eyebrow">COMMAND BLOCK / WEB</p>
+      <h1 id="authTitle">พื้นที่ทำงานของคุณ<br><span>อยู่ได้ทุกหน้าจอ</span></h1>
+      <p class="auth-copy">เข้าสู่ระบบเพื่อคุยกับโมเดล Cloud ของคุณจากมือถือ, PC หรือ Remote PC</p>
+      <form class="auth-actions" id="authForm">
+        <input id="authName" class="auth-input" autocomplete="name" placeholder="ชื่อที่แสดง (ตอนสมัคร)">
+        <input id="authEmail" class="auth-input" type="email" autocomplete="email" placeholder="อีเมล" required>
+        <input id="authPassword" class="auth-input" type="password" autocomplete="current-password" placeholder="รหัสผ่านอย่างน้อย 8 ตัว" required minlength="8">
+        <button class="primary-action" type="submit">เข้าสู่ระบบ</button>
+        <button class="secondary-action" type="button" data-auth-action="register">สร้างบัญชี</button>
+        <button class="text-action" type="button" data-auth-action="reset">ลืมรหัสผ่าน</button>
+      </form>
+      <p id="authStatus" class="auth-status" role="status"></p>
+      <p class="auth-note">Cloud API key เป็นของคุณและจะไม่ถูกเก็บในบัญชี Commandblock</p>
+    </section>
+  </main>
+  <main id="appGate" class="app-shell" hidden>
+    <aside class="app-rail" aria-label="เมนูหลัก">
+      <a class="brand-mark" href="#chat" aria-label="Commandblock">⌘</a>
+      <button class="rail-button is-active" type="button" aria-label="แชท">◈</button>
+      <button class="rail-button" type="button" aria-label="ประวัติ">◫</button>
+      <button class="rail-button" type="button" aria-label="ตั้งค่า">⚙</button>
+    </aside>
+    <section class="chat-area" id="chat">
+      <header class="topbar"><strong>Commandblock</strong><button type="button" class="model-chip">เลือกโมเดล</button></header>
+      <div class="empty-chat"><span>✦</span><h2>เริ่มบทสนทนาใหม่</h2><p>เลือกโมเดล Cloud ของคุณใน Settings แล้วพิมพ์สิ่งที่ต้องการทำ</p></div>
+      <form class="composer"><label class="sr-only" for="message">ข้อความ</label><textarea id="message" rows="1" placeholder="พิมพ์งานที่ต้องการ…"></textarea><button class="send-button" type="submit" aria-label="ส่งข้อความ">↑</button></form>
+    </section>
+    <nav class="bottom-nav" aria-label="เมนูมือถือ"><button type="button">แชท</button><button type="button">ประวัติ</button><button type="button">โมเดล</button><button type="button">ตั้งค่า</button></nav>
+  </main>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

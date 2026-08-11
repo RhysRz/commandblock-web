@@ -1,0 +1,22 @@
+# Secrets and local user state
+config.json
+.env
+.env.*
+!.env.example
+buff_session.json
+.freebuff/
+
+# Build output and bundled runtime
+target/
+dist/
+output/
+installer/payload/
+Commandblock.exe
+buff.exe
+*.pdb
+testfile.docx
+output/
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db

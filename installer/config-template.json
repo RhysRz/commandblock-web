@@ -1,0 +1,24 @@
+{
+  "_comment": "Commandblock ใช้ DeepSeek Coder ในเครื่องผ่าน Ollama — ไม่มี API key อยู่ในไฟล์นี้",
+  "api_key": "",
+  "backend": "ollama",
+  "base_url": "http://localhost:11434/v1",
+  "model": "deepseek-coder:1.3b",
+  "models": [
+    {
+      "model": "deepseek-coder:1.3b",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": ""
+    },
+    {
+      "model": "glm-5.2:cloud",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": ""
+    },
+    {
+      "model": "minimax-m3:cloud",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": ""
+    }
+  ]
+}

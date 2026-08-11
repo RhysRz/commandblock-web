@@ -1,0 +1,13 @@
+{
+  "api_key": "",
+  "backend": "openai",
+  "base_url": "https://api.deepseek.com",
+  "model": "deepseek-v4-flash",
+  "models": [
+    {
+      "model": "deepseek-v4-flash",
+      "base_url": "https://api.deepseek.com",
+      "api_key": ""
+    }
+  ]
+}
