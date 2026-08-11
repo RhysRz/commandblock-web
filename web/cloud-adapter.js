@@ -9,6 +9,10 @@
   const originalFetch = window.fetch.bind(window);
   const client = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
   let conversationId = null;
+  document.documentElement.classList.add('cb-auth-pending');
+  const authLockStyle = document.createElement('style');
+  authLockStyle.textContent = 'html.cb-auth-pending body > :not(#cb-cloud-gate){visibility:hidden!important}';
+  document.head.appendChild(authLockStyle);
 
   const json = (body, status = 200) => new Response(JSON.stringify(body), {
     status,
@@ -131,7 +135,7 @@
   function mountAuthGate() {
     const style = document.createElement('style');
     style.textContent = `#cb-cloud-gate{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#251044 0,#0d0918 58%,#07060d 100%);color:#f5efff;font-family:"Segoe UI","Noto Sans Thai",sans-serif}#cb-cloud-gate[hidden]{display:none}.cb-cloud-card{width:min(440px,100%);padding:32px;border:1px solid rgba(184,137,255,.35);border-radius:24px;background:rgba(23,14,43,.84);box-shadow:0 28px 80px rgba(0,0,0,.48);backdrop-filter:blur(18px)}.cb-cloud-card h1{margin:0 0 10px;font-size:28px}.cb-cloud-card p{color:#cdbfe8;line-height:1.6}.cb-cloud-card input{width:100%;margin-top:10px;padding:13px 14px;border:1px solid #5b3e84;border-radius:12px;background:#100a20;color:#fff;font:inherit}.cb-cloud-actions{display:grid;gap:10px;margin-top:18px}.cb-cloud-actions button{padding:12px;border:1px solid #7344ba;border-radius:12px;background:#271343;color:#fff;font:inherit;font-weight:700;cursor:pointer}.cb-cloud-actions button.primary{border:0;background:linear-gradient(135deg,#7034df,#a65cff)}.cb-cloud-status{min-height:24px;margin-top:14px;color:#bfeadf;font-size:13px}.cb-cloud-link{background:none!important;border:0!important;color:#c69aff!important;text-decoration:underline;font-weight:400!important}`;
-    style.textContent += `@media (max-width: 760px){body{grid-template-columns:44px minmax(0,1fr);height:100dvh}#histpane,#rightpane{display:none}#chatpane{min-width:0}.chat-head{gap:7px;padding:10px}.chat-title .sub{display:none}.chat-title h1{font-size:15px}.pill#folderBtn{display:none}.chat-foot{padding:8px}.statusbar{font-size:10px}.feedback{display:none}.inputbox{min-height:46px}.logo img{width:34px;height:34px}.wrap{padding:14px 10px}.bubble{max-width:96%}}`;
+    style.textContent += `#settingsModal .set-sec:nth-of-type(2){display:none}@media (max-width: 760px){body{grid-template-columns:44px minmax(0,1fr);height:100dvh}#histpane,#rightpane{display:none}#chatpane{min-width:0}.chat-head{gap:7px;padding:10px}.chat-title .sub{display:none}.chat-title h1{font-size:15px}.pill#folderBtn{display:none}.chat-foot{padding:8px}.statusbar{font-size:10px}.feedback{display:none}.inputbox{min-height:46px}.logo img{width:34px;height:34px}.wrap{padding:14px 10px}.bubble{max-width:96%}}`;
     document.head.appendChild(style);
     const gate = document.createElement('section');
     gate.id = 'cb-cloud-gate';
@@ -143,7 +147,23 @@
     const name = gate.querySelector('#cb-cloud-name');
     const report = (message, error = false) => { status.textContent = message; status.style.color = error ? '#ffc2d8' : '#bfeadf'; };
     const errorText = (error) => error?.message === 'Invalid login credentials' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : (error?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
-    const openApp = () => { gate.hidden = true; };
+    const openApp = () => { gate.hidden = true; document.documentElement.classList.remove('cb-auth-pending'); };
+    const logout = document.createElement('button');
+    logout.id = 'cb-cloud-logout';
+    logout.className = 'pill';
+    logout.type = 'button';
+    logout.textContent = 'Log out';
+    document.querySelector('.chat-head')?.appendChild(logout);
+    logout.addEventListener('click', async () => {
+      const { error } = await client.auth.signOut();
+      if (error) { window.alert(errorText(error)); return; }
+      sessionStorage.removeItem(KEY_NAME);
+      conversationId = null;
+      gate.hidden = false;
+      document.documentElement.classList.add('cb-auth-pending');
+      password.value = '';
+      report('ออกจากระบบแล้ว');
+    });
     if (!client) { report('โหลดระบบเข้าสู่ระบบไม่สำเร็จ กรุณารีเฟรชหน้าเว็บ', true); return; }
     client.auth.getSession().then(({ data }) => { if (data.session) openApp(); });
     gate.querySelector('#cb-cloud-form').addEventListener('submit', async (event) => {
