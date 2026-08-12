@@ -307,6 +307,18 @@ fn trim_history(h: &mut Vec<Value>) {
     *h = kept;
 }
 
+/// เมื่อหยุด agentic loop ต้องตอบกลับทุก structured tool call เสมอ
+/// มิฉะนั้น OpenAI-compatible API จะปฏิเสธ history ในรอบถัดไป
+fn append_skipped_tool_results(history: &mut Vec<Value>, calls: &[llm::ToolCall]) {
+    for call in calls {
+        history.push(json!({
+            "role": "tool",
+            "tool_call_id": call.id,
+            "content": "ข้ามการทำงาน: ระบบหยุดเพื่อป้องกันการเรียกเครื่องมือวนซ้ำ"
+        }));
+    }
+}
+
 /// วน agentic loop: ให้ LLM คิด → ใช้เครื่องมือ → ส่งผลกลับ → จนกว่าไม่มี tool call
 /// ผลลัพธ์ทั้งหมดส่งผ่าน `sink` (CLI พิมพ์จอ / GUI ส่ง SSE)
 pub fn run_turn(
@@ -396,6 +408,7 @@ pub fn run_turn(
         history.push(msg);
 
         // บางโมเดลเขียน tool call เป็น JSON ในข้อความ — จับมาใช้เป็นทางเลือก
+        let structured_calls = resp.tool_calls.clone();
         let mut calls = resp.tool_calls;
         if calls.is_empty() && !resp.content.trim().is_empty() {
             if let Some(parsed) = llm::extract_content_tool_calls(&resp.content) {
@@ -432,6 +445,7 @@ pub fn run_turn(
                 }
             }
             if looped {
+                append_skipped_tool_results(history, &structured_calls);
                 sink.note("[CommandBlock] AI วนลูปเรียกเครื่องมือเดิมบ่อยเกินไป — ขอสรุปผลล่าสุดแทน");
                 final_summary(agent, eff, history, last_tool_result.as_deref(), sink);
                 sink.end_line();
@@ -516,6 +530,27 @@ fn mask_key(key: &str) -> String {
     let head: String = key.chars().take(4).collect();
     let tail: String = key.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
     format!("{head}…{tail}")
+}
+
+#[cfg(test)]
+mod protocol_tests {
+    use super::*;
+
+    #[test]
+    fn loop_stop_replies_to_every_pending_structured_tool_call() {
+        let mut history = vec![json!({"role": "assistant", "tool_calls": [{"id": "one"}, {"id": "two"}]})];
+        let calls = vec![
+            llm::ToolCall { id: "one".into(), name: "list_directory".into(), arguments: json!({}), extra: None },
+            llm::ToolCall { id: "two".into(), name: "read_file".into(), arguments: json!({}), extra: None },
+        ];
+
+        append_skipped_tool_results(&mut history, &calls);
+
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[1]["role"], "tool");
+        assert_eq!(history[1]["tool_call_id"], "one");
+        assert_eq!(history[2]["tool_call_id"], "two");
+    }
 }
 
 pub fn system_prompt() -> String {
