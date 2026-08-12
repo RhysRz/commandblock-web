@@ -5,7 +5,7 @@
 //! - GET  /api/state   สถานะแบ็กเอนด์/โมเดล/จำนวนข้อความ
 //! - POST /api/chat    ส่งข้อความ → สตรีมคำตอบกลับเป็น SSE (content/tool/note/done)
 
-use crate::{config, connector, diagnostics, remote, tools, update, TurnSink};
+use crate::{auth, cloud, config, connector, diagnostics, remote, tools, update, TurnSink};
 use image::GenericImageView;
 use serde_json::{json, Value};
 use std::io::{BufWriter, Read, Write};
@@ -33,6 +33,7 @@ struct Shared {
     scan_context: Option<String>, // บริบทโฟลเดอร์ที่ผู้ใช้เปิด (อ่านทั้งโฟลเดอร์)
     folder_name: String,          // ชื่อโฟลเดอร์ปัจจุบัน (แสดงใต้ช่องส่ง) — เริ่มจากโฟลเดอร์โปรเจกต์
     folder_path: String,          // พาธเต็มของโฟลเดอร์ปัจจุบัน
+    account: Option<auth::Account>, // บัญชีที่ล็อกอิน (เก็บข้อมูลต่อบัญชี — ประวัติแชท/โน้ต)
 }
 
 impl Shared {
@@ -57,6 +58,53 @@ impl Shared {
                 self.startup_note.as_deref()
             ));
         }
+    }
+}
+
+/// พาธไฟล์ session ตามบัญชีที่ล็อกอิน (ไม่มีบัญชี = buff_session.json แบบเดิม)
+fn session_path_for(account: &Option<auth::Account>) -> String {
+    match account {
+        Some(a) => format!(".freebuff/sessions/{}.json", a.user_id),
+        None => crate::SESSION_FILE.to_string(),
+    }
+}
+
+/// พาธไฟล์โน้ตตามบัญชีที่ล็อกอิน (ไม่มีบัญชี = notes.md แบบเดิม)
+fn notes_path_for(account: &Option<auth::Account>) -> String {
+    match account {
+        Some(a) => format!(".freebuff/notes_{}.md", a.user_id),
+        None => "notes.md".to_string(),
+    }
+}
+
+/// สลับบัญชี — บันทึกประวัติของบัญชีเดิม แล้วโหลดประวัติของบัญชีใหม่ (แยกไฟล์ต่อบัญชี)
+/// ถ้ามีบัญชี → ดึงประวัติจากคลาวด์ (ซิงก์ข้ามเครื่อง) มาแทนที่ถ้ามี
+fn switch_account(agent: &ureq::Agent, shared: &Mutex<Shared>, account: Option<auth::Account>) {
+    let mut g = shared.lock().unwrap();
+    crate::save_session_at(&session_path_for(&g.account), &g.history);
+    g.account = account;
+    let mut history = vec![json!({"role": "system", "content": crate::system_prompt()})];
+    history.extend(crate::load_session_at(&session_path_for(&g.account)));
+    if g.account.is_some() {
+        drop(g);
+        // ดึงประวัติคลาวด์ของบัญชีนี้ (ถ้าเคยซิงก์ไว้) — คลาวด์เป็นแหล่งล่าสุด
+        match cloud::pull(agent) {
+            Ok(Some((_conv_id, msgs))) if !msgs.is_empty() => {
+                let mut g = shared.lock().unwrap();
+                g.history = vec![json!({"role": "system", "content": crate::system_prompt()})];
+                for (role, content) in msgs {
+                    g.history.push(json!({"role": role, "content": content}));
+                }
+                g.plan = None;
+                g.rebuild_system();
+            }
+            _ => {}
+        }
+        let mut g = shared.lock().unwrap();
+        g.rebuild_system();
+    } else {
+        g.plan = None;
+        g.rebuild_system();
     }
 }
 
@@ -401,8 +449,30 @@ pub fn serve(
     let (listener, port) = bind_free();
     let url = format!("http://127.0.0.1:{port}/");
 
+    // บัญชีที่ล็อกอินไว้ (จาก keyring) — ถ้ามี ให้โหลดประวัติของบัญชีนั้น (แยกไฟล์ต่อบัญชี)
+    let account = auth::restore().ok().flatten();
     let mut history = vec![json!({"role": "system", "content": crate::system_prompt()})];
-    history.extend(crate::load_session());
+    history.extend(crate::load_session_at(&session_path_for(&account)));
+    // ถ้ามีบัญชี → ดึงประวัติล่าสุดจากคลาวด์ (ซิงก์ข้ามเครื่อง — คลาวด์เป็นแหล่งล่าสุด)
+    if let Some(a) = &account {
+        eprintln!("[startup] account={} user_id={} path={}", a.email, a.user_id, session_path_for(&account));
+        match cloud::pull(&agent) {
+            Ok(Some((cid, msgs))) => {
+                eprintln!("[startup] pull OK conv={} msgs={}", cid, msgs.len());
+                if !msgs.is_empty() {
+                    history = vec![json!({"role": "system", "content": crate::system_prompt()})];
+                    for (role, content) in msgs {
+                        history.push(json!({"role": role, "content": content}));
+                    }
+                }
+            }
+            Ok(None) => eprintln!("[startup] pull None (ยังไม่เคยซิงก์)"),
+            Err(e) => eprintln!("[startup] pull error: {e}"),
+        }
+    } else {
+        eprintln!("[startup] ไม่มีบัญชี — ใช้ session แบบไม่ระบุตัวตน");
+    }
+    eprintln!("[startup] history loaded: {} ข้อความ", history.len().saturating_sub(1));
     let (startup_script, skills, startup_last_run) = load_settings();
     // ชื่อ/พาธโฟลเดอร์โปรเจกต์ (cwd) — ใช้เป็นค่าเริ่มต้นของตัวแสดงโฟลเดอร์
     let (cwd_name, cwd_path) = {
@@ -427,6 +497,7 @@ pub fn serve(
         scan_context: None,
         folder_name: cwd_name,
         folder_path: cwd_path,
+        account,
     }));
     // ใส่ทักษะที่ตั้งไว้ (preloaded) + บริบทโฟลเดอร์ลงใน system prompt ตั้งแต่เริ่ม
     shared.lock().unwrap().rebuild_system();
@@ -693,6 +764,7 @@ fn handle(
                 "plan": g.plan.clone().unwrap_or_default(),
                 "folder": g.folder_name.clone(),
                 "folder_path": g.folder_path.clone(),
+                "account": g.account.as_ref().map(|a| a.email.clone()),
             });
             respond(
                 &mut out,
@@ -746,6 +818,10 @@ fn handle(
                 })
                 .unwrap_or_default();
             let result = match action.as_str() {
+                "check" => {
+                    update::check_for_update_async();
+                    Ok(update::status_json())
+                }
                 "download" => {
                     update::download_available_release_async().map(|_| update::status_json())
                 }
@@ -920,7 +996,8 @@ fn handle(
             );
         }
         ("GET", "/api/notes") => {
-            let notes = std::fs::read_to_string("notes.md").unwrap_or_default();
+            let path = notes_path_for(&shared.lock().unwrap().account);
+            let notes = std::fs::read_to_string(&path).unwrap_or_default();
             respond(
                 &mut out,
                 200,
@@ -933,12 +1010,85 @@ fn handle(
                 .ok()
                 .and_then(|v| v["notes"].as_str().map(|s| s.to_string()))
                 .unwrap_or_default();
-            let ok = std::fs::write("notes.md", notes).is_ok();
+            let path = notes_path_for(&shared.lock().unwrap().account);
+            if let Some(parent) = std::path::Path::new(&path).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let ok = std::fs::write(&path, notes).is_ok();
             respond(
                 &mut out,
                 200,
                 "application/json",
                 json!({ "saved": ok }).to_string().as_bytes(),
+            );
+        }
+        ("GET", "/api/auth/status") => {
+            let email = shared
+                .lock()
+                .unwrap()
+                .account
+                .as_ref()
+                .map(|a| a.email.clone());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "logged_in": email.is_some(), "email": email })
+                    .to_string()
+                    .as_bytes(),
+            );
+        }
+        ("POST", "/api/auth/signup") => {
+            let v: Value = serde_json::from_str(&body_str).unwrap_or_default();
+            let email = v["email"].as_str().unwrap_or("").trim().to_string();
+            let password = v["password"].as_str().unwrap_or("").to_string();
+            if !auth::valid_email(&email) {
+                respond(&mut out, 400, "application/json", json!({"ok": false, "error": "อีเมลไม่ถูกต้อง"}).to_string().as_bytes());
+                return;
+            }
+            if password.len() < 6 {
+                respond(&mut out, 400, "application/json", json!({"ok": false, "error": "รหัสผ่านต้องยาวอย่างน้อย 6 ตัวอักษร"}).to_string().as_bytes());
+                return;
+            }
+            match auth::sign_up(agent, &email, &password) {
+                Ok(auth::SignUpResult::LoggedIn(acc)) => {
+                    switch_account(agent, &shared, Some(acc));
+                    respond(&mut out, 200, "application/json", json!({"ok": true, "logged_in": true, "email": email}).to_string().as_bytes());
+                }
+                Ok(auth::SignUpResult::NeedsConfirmation { email }) => {
+                    respond(&mut out, 200, "application/json", json!({"ok": true, "logged_in": false, "confirm": true, "email": email}).to_string().as_bytes());
+                }
+                Err(e) => {
+                    respond(&mut out, 400, "application/json", json!({"ok": false, "error": e}).to_string().as_bytes());
+                }
+            }
+        }
+        ("POST", "/api/auth/login") => {
+            let v: Value = serde_json::from_str(&body_str).unwrap_or_default();
+            let email = v["email"].as_str().unwrap_or("").trim().to_string();
+            let password = v["password"].as_str().unwrap_or("").to_string();
+            if email.is_empty() || password.is_empty() {
+                respond(&mut out, 400, "application/json", json!({"ok": false, "error": "กรอกอีเมลและรหัสผ่านก่อน"}).to_string().as_bytes());
+                return;
+            }
+            match auth::sign_in(agent, &email, &password) {
+                Ok(acc) => {
+                    switch_account(agent, &shared, Some(acc));
+                    respond(&mut out, 200, "application/json", json!({"ok": true, "logged_in": true, "email": email}).to_string().as_bytes());
+                }
+                Err(e) => {
+                    respond(&mut out, 400, "application/json", json!({"ok": false, "error": e}).to_string().as_bytes());
+                }
+            }
+        }
+        ("POST", "/api/auth/logout") => {
+            let _ = auth::sign_out();
+            switch_account(agent, &shared, None);
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "ok": true }).to_string().as_bytes(),
             );
         }
         ("GET", "/api/settings") => {
@@ -1211,10 +1361,17 @@ fn handle_chat(
         let mut sink = SseSink { out };
         crate::run_turn(agent, &cur_eff, &configured_models, history, plan, &mut sink);
     }
-    crate::save_session(&g.history);
+    crate::save_session_at(&session_path_for(&g.account), &g.history);
+    let sync_history = g.history.clone();
+    let sync_model = g.model.clone();
+    let logged_in = g.account.is_some();
     drop(g);
     let _ = sse(out, "done", json!({"ok": true}));
     let _ = out.flush();
+    // ซิงก์ประวัติแชทขึ้นคลาวด์ (ต่อบัญชี — ใช้ข้ามเครื่องได้)
+    if logged_in {
+        let _ = cloud::push(agent, &sync_history, &sync_model);
+    }
 }
 
 /// จัดการคำสั่งที่ขึ้นต้นด้วย / คืนข้อความที่จะตอบ (None = ไม่ใช่คำสั่ง)
@@ -1254,8 +1411,8 @@ fn try_command(message: &str, _eff: &config::Effective, shared: &Mutex<Shared>) 
         "/forget" => {
             g.history.truncate(1);
             g.plan = None;
-            let _ = std::fs::remove_file(crate::SESSION_FILE);
-            "ล้างความจำแล้ว (ลบไฟล์ buff_session.json และเริ่มใหม่)".to_string()
+            let _ = std::fs::remove_file(session_path_for(&g.account));
+            "ล้างความจำแล้ว (ลบไฟล์ session และเริ่มใหม่)".to_string()
         }
         "/preview" => tools::reopen_preview(),
         _ => return None,

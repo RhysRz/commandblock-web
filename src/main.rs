@@ -11,7 +11,7 @@ mod config;
 mod gui;
 mod llm;
 
-use commandblock::{connector, diagnostics};
+use commandblock::{auth, cloud, connector, diagnostics};
 use commandblock::remote;
 pub use commandblock::tools;
 use commandblock::update;
@@ -290,9 +290,14 @@ fn main() {
     println!("ลาก่อนครับ 👋");
 }
 
-/// โหลดความจำจากไฟล์ session (เฉพาะข้อความที่เคยบันทึกไว้)
+/// โหลดความจำจากไฟล์ session (เฉพาะข้อความที่เคยบันทึกไว้) — ไฟล์เริ่มต้น buff_session.json
 pub fn load_session() -> Vec<Value> {
-    let Ok(text) = fs::read_to_string(SESSION_FILE) else {
+    load_session_at(SESSION_FILE)
+}
+
+/// โหลดความจำจากไฟล์ session เฉพาะ (GUI ใช้แยกไฟล์ต่อบัญชี)
+pub fn load_session_at(path: &str) -> Vec<Value> {
+    let Ok(text) = fs::read_to_string(path) else {
         return Vec::new();
     };
     let Ok(v) = serde_json::from_str::<Value>(&text) else {
@@ -307,8 +312,13 @@ pub fn load_session() -> Vec<Value> {
     }
 }
 
-/// บันทึกความจำลงไฟล์ session (เก็บเฉพาะ 20 ข้อความล่าสุด)
+/// บันทึกความจำลงไฟล์ session (เก็บเฉพาะ 20 ข้อความล่าสุด) — ไฟล์เริ่มต้น buff_session.json
 pub fn save_session(history: &[Value]) {
+    save_session_at(SESSION_FILE, history);
+}
+
+/// บันทึกความจำลงไฟล์ session เฉพาะ (GUI ใช้แยกไฟล์ต่อบัญชี)
+pub fn save_session_at(path: &str, history: &[Value]) {
     let msgs: Vec<Value> = history.iter().skip(1).cloned().collect();
     let mut start = msgs.len().saturating_sub(SESSION_KEEP);
     // ถ้าข้อความแรกเป็น tool message ต้องเอา assistant (ที่เรียกเครื่องมือนั้น) ก่อนหน้าด้วย
@@ -317,11 +327,14 @@ pub fn save_session(history: &[Value]) {
     }
     let kept: Vec<Value> = msgs[start..].to_vec();
     if kept.is_empty() {
-        let _ = fs::remove_file(SESSION_FILE);
+        let _ = fs::remove_file(path);
         return;
     }
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     if let Ok(text) = serde_json::to_string_pretty(&kept) {
-        let _ = fs::write(SESSION_FILE, text);
+        let _ = fs::write(path, text);
     }
 }
 

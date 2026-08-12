@@ -194,6 +194,10 @@ pub fn chat_stream(
 
     let url = format!("{}/chat/completions", eff.base_url.trim_end_matches('/'));
 
+    // ทำความสะอาด history: assistant ที่มี tool_calls ต้องมี tool message ตอบครบทุก call —
+    // ถ้าไม่ครบ (ประวัติเก่า/โดนตัด) ให้ลบทิ้งทั้งคู่ ไม่งั้น API 400
+    let messages = sanitize_tool_messages(messages);
+
     let mut body = json!({
         "model": eff.model,
         "messages": messages,
@@ -399,6 +403,55 @@ pub fn chat_stream(
         finish,
         usage,
     })
+}
+
+/// ตัด assistant message ที่มี tool_calls ค้าง (ไม่มี tool message ตอบครบ) ออกจากประวัติ
+/// — ป้องกัน API ปฏิเสธ (400) ตอนโหลดประวัติเก่า/ถูกตัดกลางคัน
+fn sanitize_tool_messages(messages: &[Value]) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::with_capacity(messages.len());
+    let mut i = 0usize;
+    while i < messages.len() {
+        let m = &messages[i];
+        let role = m.get("role").and_then(Value::as_str).unwrap_or("");
+        if role == "assistant" {
+            if let Some(calls) = m.get("tool_calls").and_then(Value::as_array) {
+                if !calls.is_empty() {
+                    // นับ tool messages ที่ตอบครบทุก call_id ของ assistant นี้
+                    let mut j = i + 1;
+                    let mut answered = 0usize;
+                    let mut seen = std::collections::HashSet::new();
+                    while j < messages.len() {
+                        let next = &messages[j];
+                        if next.get("role").and_then(Value::as_str) != Some("tool") {
+                            break;
+                        }
+                        if let Some(id) = next.get("tool_call_id").and_then(Value::as_str) {
+                            if calls.iter().any(|c| c.get("id").and_then(Value::as_str) == Some(id))
+                                && seen.insert(id.to_string())
+                            {
+                                answered += 1;
+                            }
+                        }
+                        j += 1;
+                    }
+                    if answered >= calls.len() {
+                        out.push(m.clone());
+                        for k in i + 1..j {
+                            out.push(messages[k].clone());
+                        }
+                        i = j;
+                        continue;
+                    }
+                    // tool_calls ค้าง — ตัดทั้ง assistant และ tool messages ที่ตามมา
+                    i = j;
+                    continue;
+                }
+            }
+        }
+        out.push(m.clone());
+        i += 1;
+    }
+    out
 }
 
 /// โมเดลบางตัว (เช่น qwen2.5-coder:3b) ไม่ส่ง structured tool_calls

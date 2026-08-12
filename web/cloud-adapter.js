@@ -10,9 +10,12 @@
   const originalFetch = window.fetch.bind(window);
   const client = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
   let conversationId = null;
+  let cloudUser = null; // session ของ supabase (email/ผู้ใช้) — ใช้แสดงชิปบัญชี
   document.documentElement.classList.add('cb-auth-pending');
   const authLockStyle = document.createElement('style');
-  authLockStyle.textContent = 'html.cb-auth-pending body > :not(#cb-cloud-gate){visibility:hidden!important}';
+  // ซ่อนทุกอย่างยกเว้น #authScreen (หน้าเข้าสู่ระบบแบบเดียวกับแอปเดสก์ท็อป)
+  // และซ่อนปุ่ม "ข้าม" บนเว็บ — Cloud chat ต้องเข้าสู่ระบบ (ไม่มี local backend)
+  authLockStyle.textContent = 'html.cb-auth-pending body > :not(#authScreen){visibility:hidden!important}#authSkip{display:none!important}';
   document.head.appendChild(authLockStyle);
 
   const json = (body, status = 200) => new Response(JSON.stringify(body), {
@@ -26,6 +29,7 @@
   const cloudState = () => ({
     version: 'web', backend: 'cloud', model: MODEL, base_url: 'https://api.deepseek.com',
     folder: 'Cloud session', folder_path: '', preview_url: '', skill_count: 0, session_messages: 0,
+    account: cloudUser?.email || null,
   });
   const connectorMessage = 'ฟีเจอร์นี้ต้องเชื่อมต่อ Desktop Connector เพื่อเข้าถึงไฟล์และเครื่องของคุณ';
 
@@ -229,8 +233,56 @@
     return json({ ok: false, requires_connector: true, message: connectorMessage });
   }
 
+  /* ---------- Auth (หน้าเดียวกับแอปเดสก์ท็อป — #authScreen ใน HTML) ---------- */
+  async function authStatus() {
+    if (!client) return json({ logged_in: false, email: null });
+    const { data } = await client.auth.getSession();
+    if (data.session) {
+      cloudUser = data.session.user;
+      return json({ logged_in: true, email: data.session.user.email });
+    }
+    cloudUser = null;
+    return json({ logged_in: false, email: null });
+  }
+  async function authLogin(init) {
+    const { email = '', password = '' } = requestBody(init);
+    if (!client) return json({ ok: false, error: 'โหลดระบบเข้าสู่ระบบไม่สำเร็จ กรุณารีเฟรช' }, 400);
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error || !data.session) {
+      const message = error?.message === 'Invalid login credentials' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : (error?.message || 'เข้าสู่ระบบไม่สำเร็จ');
+      return json({ ok: false, error: message }, 400);
+    }
+    cloudUser = data.session.user;
+    return json({ ok: true, logged_in: true, email: data.session.user.email });
+  }
+  async function authSignup(init) {
+    const { email = '', password = '' } = requestBody(init);
+    if (!client) return json({ ok: false, error: 'โหลดระบบเข้าสู่ระบบไม่สำเร็จ กรุณารีเฟรช' }, 400);
+    const { data, error } = await client.auth.signUp({ email, password, options: { emailRedirectTo: location.href } });
+    if (error) return json({ ok: false, error: error?.message || 'สมัครสมาชิกไม่สำเร็จ' }, 400);
+    if (data.session) {
+      cloudUser = data.session.user;
+      return json({ ok: true, logged_in: true, email: data.session.user.email });
+    }
+    return json({ ok: true, logged_in: false, confirm: true, email });
+  }
+  async function authLogout() {
+    await client?.auth.signOut().catch(() => {});
+    cloudUser = null;
+    sessionStorage.removeItem(KEY_NAME);
+    conversationId = null;
+    return json({ ok: true });
+  }
+
   window.fetch = async (input, init = {}) => {
+    // หน่วงหนึ่ง macrotask — ให้สคริปต์หลักของหน้าโหลดเสร็จก่อน (ฟังก์ชัน setFolder/setTodos ฯลฯ)
+    // มิฉะนั้น response แบบซิงโครนัสของเราจะถูกประมวลผลใน microtask ก่อนสคริปต์ตัวถัดไป → ReferenceError → แอปขึ้น "offline"
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const path = apiPath(input);
+    if (path === '/api/auth/status') return authStatus();
+    if (path === '/api/auth/login') return authLogin(init);
+    if (path === '/api/auth/signup') return authSignup(init);
+    if (path === '/api/auth/logout') return authLogout();
     if (path === '/api/state') return json(cloudState());
     if (path === '/api/models') return json({ models: [{ name: MODEL, base_url: 'https://api.deepseek.com', source: 'cloud', active: true }] });
     if (path === '/api/model') return json({ ok: true, backend: 'cloud', model: MODEL, base_url: 'https://api.deepseek.com' });
@@ -247,6 +299,10 @@
     if (path === '/api/pick-folder') return connectorResult('pick_folder', {}, (message) => ({ ok: false, requires_connector: true, message }));
     if (path === '/api/exec') return connectorResult('exec', requestBody(init), (message) => ({ output: message, requires_connector: true }));
     if (['/api/settings', '/api/startup-log'].includes(path)) return unsupported(path);
+    if (path === '/api/update') {
+      if ((init?.method || 'GET').toUpperCase() === 'POST') return json({ ok: true, state: 'up_to_date', note: 'เว็บอัปเดตอัตโนมัติจาก GitHub Pages — ไม่ต้องอัปเดตเอง' });
+      return json({ state: 'up_to_date', latest: 'web', note: 'เว็บอัปเดตอัตโนมัติจาก GitHub Pages' });
+    }
     return originalFetch(input, init);
   };
 
@@ -316,55 +372,56 @@
   }
 
   function mountAuthGate() {
-    const style = document.createElement('style');
-    style.textContent = `#cb-cloud-gate{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#251044 0,#0d0918 58%,#07060d 100%);color:#f5efff;font-family:"Segoe UI","Noto Sans Thai",sans-serif}#cb-cloud-gate[hidden]{display:none}.cb-cloud-card{width:min(440px,100%);padding:32px;border:1px solid rgba(184,137,255,.35);border-radius:24px;background:rgba(23,14,43,.84);box-shadow:0 28px 80px rgba(0,0,0,.48);backdrop-filter:blur(18px)}.cb-cloud-card h1{margin:0 0 10px;font-size:28px}.cb-cloud-card p{color:#cdbfe8;line-height:1.6}.cb-cloud-card input{width:100%;margin-top:10px;padding:13px 14px;border:1px solid #5b3e84;border-radius:12px;background:#100a20;color:#fff;font:inherit}.cb-cloud-actions{display:grid;gap:10px;margin-top:18px}.cb-cloud-actions button{padding:12px;border:1px solid #7344ba;border-radius:12px;background:#271343;color:#fff;font:inherit;font-weight:700;cursor:pointer}.cb-cloud-actions button.primary{border:0;background:linear-gradient(135deg,#7034df,#a65cff)}.cb-cloud-status{min-height:24px;margin-top:14px;color:#bfeadf;font-size:13px}.cb-cloud-link{background:none!important;border:0!important;color:#c69aff!important;text-decoration:underline;font-weight:400!important}`;
-    style.textContent += `#settingsModal .set-sec:nth-of-type(2){display:none}#statsRight{display:none}#modelPill{max-width:none!important;overflow:visible!important}#cb-cloud-logout{margin-left:auto;flex-shrink:0;padding:3px 10px}@media (max-width: 760px){body{grid-template-columns:44px minmax(0,1fr);height:100dvh}#histpane,#rightpane{display:none}#chatpane{min-width:0}.chat-head{gap:7px;padding:10px}.chat-title .sub{display:none}.chat-title h1{font-size:15px}.pill#folderBtn{display:none}.chat-foot{padding:8px}.statusbar{font-size:10px}.feedback{display:none}.inputbox{min-height:46px}.logo img{width:34px;height:34px}.wrap{padding:14px 10px}.bubble{max-width:96%}}`;
-    document.head.appendChild(style);
-    const gate = document.createElement('section');
-    gate.id = 'cb-cloud-gate';
-    gate.innerHTML = `<div class="cb-cloud-card"><h1>CommandBlock Web</h1><p>เข้าสู่ระบบเพื่อใช้ CommandBlock เดิมบนเว็บ พร้อม Cloud chat ของคุณ</p><form id="cb-cloud-form"><input id="cb-cloud-name" placeholder="ชื่อที่แสดง (เฉพาะตอนสมัคร)" autocomplete="name"><input id="cb-cloud-email" type="email" placeholder="อีเมล" autocomplete="email" required><input id="cb-cloud-password" type="password" placeholder="รหัสผ่านอย่างน้อย 8 ตัว" autocomplete="current-password" minlength="8" required><div class="cb-cloud-actions"><button class="primary" type="submit">เข้าสู่ระบบ</button><button id="cb-cloud-register" type="button">สร้างบัญชี</button><button id="cb-cloud-reset" class="cb-cloud-link" type="button">ลืมรหัสผ่าน</button></div></form><div id="cb-cloud-status" class="cb-cloud-status" role="status"></div><p>API key ของ DeepSeek อยู่เฉพาะ session นี้ และไม่ถูกบันทึกในบัญชี</p></div>`;
-    document.body.appendChild(gate);
-    const status = gate.querySelector('#cb-cloud-status');
-    const email = gate.querySelector('#cb-cloud-email');
-    const password = gate.querySelector('#cb-cloud-password');
-    const name = gate.querySelector('#cb-cloud-name');
-    const report = (message, error = false) => { status.textContent = message; status.style.color = error ? '#ffc2d8' : '#bfeadf'; };
-    const errorText = (error) => error?.message === 'Invalid login credentials' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : (error?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
-    const openApp = () => { gate.hidden = true; document.documentElement.classList.remove('cb-auth-pending'); mountRemotePC(); mountDevices(); mountAccount(); };
-    const logout = document.createElement('button');
-    logout.id = 'cb-cloud-logout';
-    logout.className = 'pill';
-    logout.type = 'button';
-    logout.textContent = 'Log out';
-    document.querySelector('.statusbar')?.appendChild(logout);
-    logout.addEventListener('click', async () => {
-      const { error } = await client.auth.signOut();
-      if (error) { window.alert(errorText(error)); return; }
-      sessionStorage.removeItem(KEY_NAME);
-      conversationId = null;
-      gate.hidden = false;
-      document.documentElement.classList.add('cb-auth-pending');
-      password.value = '';
-      report('ออกจากระบบแล้ว');
-    });
-    if (!client) { report('โหลดระบบเข้าสู่ระบบไม่สำเร็จ กรุณารีเฟรชหน้าเว็บ', true); return; }
-    client.auth.getSession().then(({ data }) => { if (data.session) openApp(); });
-    gate.querySelector('#cb-cloud-form').addEventListener('submit', async (event) => {
-      event.preventDefault(); report('กำลังเข้าสู่ระบบ…');
-      const { data, error } = await client.auth.signInWithPassword({ email: email.value.trim(), password: password.value });
-      if (error) { report(errorText(error), true); return; }
-      if (data.session) location.reload();
-    });
-    gate.querySelector('#cb-cloud-register').addEventListener('click', async () => {
-      report('กำลังสร้างบัญชี…');
-      const { error } = await client.auth.signUp({ email: email.value.trim(), password: password.value, options: { data: { full_name: name.value.trim() }, emailRedirectTo: location.href } });
-      report(error ? errorText(error) : 'ส่งอีเมลยืนยันแล้ว เปิดลิงก์ในอีเมลก่อนเข้าสู่ระบบ', Boolean(error));
-    });
-    gate.querySelector('#cb-cloud-reset').addEventListener('click', async () => {
-      if (!email.value.trim()) { report('กรอกอีเมลก่อนกดลืมรหัสผ่าน', true); return; }
-      const { error } = await client.auth.resetPasswordForEmail(email.value.trim(), { redirectTo: location.href });
-      report(error ? errorText(error) : 'ส่งลิงก์ตั้งรหัสผ่านใหม่แล้ว', Boolean(error));
-    });
+    // ใช้หน้าเข้าสู่ระบบของแอปเดสก์ท็อป (#authScreen — อยู่ใน HTML แล้ว) — เหมือน exe เป๊ะ
+    const screen = document.getElementById('authScreen');
+    let mounted = false;
+    const mountAfterAuth = () => {
+      if (mounted) return;
+      mounted = true;
+      document.documentElement.classList.remove('cb-auth-pending');
+      mountRemotePC(); mountDevices(); mountAccount();
+    };
+    const screenHidden = () => !screen || screen.hidden || getComputedStyle(screen).opacity === '0';
+    const maybeUnlock = () => { if (screenHidden()) mountAfterAuth(); };
+    // สังเกตการซ่อน authScreen (ล็อกอินสำเร็จ / กดข้าม) → ปลดล็อกแอป
+    if (screen) {
+      new MutationObserver(maybeUnlock).observe(screen, { attributes: true, attributeFilter: ['hidden', 'style'] });
+      // ปลดล็อกเมื่อคลิกปุ่มล็อกอิน/สมัครใน settings (showAuthScreen กลับมาโชว์) — ไม่ต้องทำอะไร เพราะ
+      // คราวนั้น authScreen จะถูกซ่อนอีกทีตอนล็อกอินสำเร็จ และ observer จะปลดล็อกเอง
+    }
+    // เช็คทันที — inline JS อาจซ่อน authScreen ไปแล้ว (ล็อกอินอยู่ / กดข้าม)
+    maybeUnlock();
+    // เช็ค session Supabase โดยตรงอีกชั้น (กันพลาดกรณี build เก่าที่ JS ไม่ครบ)
+    if (client) {
+      client.auth.getSession().then(({ data }) => {
+        if (data.session) { cloudUser = data.session.user; mountAfterAuth(); }
+      });
+    }
+    // fallback: ถ้า HTML ไม่มี #authScreen (build เก่า) — สร้างกล่องล็อกอินแบบง่าย
+    if (!screen) {
+      const gate = document.createElement('section');
+      gate.id = 'cb-cloud-gate';
+      gate.innerHTML = '<div class="cb-cloud-card"><h1>CommandBlock Web</h1><p>เข้าสู่ระบบเพื่อใช้ Cloud chat ของคุณ</p><form id="cb-cloud-form"><input id="cb-cloud-email" type="email" placeholder="อีเมล" autocomplete="email" required><input id="cb-cloud-password" type="password" placeholder="รหัสผ่าน" autocomplete="current-password" required><div class="cb-cloud-actions"><button class="primary" type="submit">เข้าสู่ระบบ</button><button id="cb-cloud-register" type="button">สร้างบัญชี</button></div></form><div id="cb-cloud-status" class="cb-cloud-status" role="status"></div></div>';
+      gate.style.cssText = 'position:fixed;inset:0;z-index:9999;display:grid;place-items:center;background:#0d0918;color:#f5efff;font-family:Segoe UI,Noto Sans Thai,sans-serif';
+      document.body.appendChild(gate);
+      const status = gate.querySelector('#cb-cloud-status');
+      const email = gate.querySelector('#cb-cloud-email');
+      const password = gate.querySelector('#cb-cloud-password');
+      const report = (message, error = false) => { status.textContent = message; status.style.color = error ? '#ffc2d8' : '#bfeadf'; };
+      const openApp = () => { gate.hidden = true; document.documentElement.classList.remove('cb-auth-pending'); mountRemotePC(); mountDevices(); mountAccount(); };
+      gate.querySelector('#cb-cloud-form').addEventListener('submit', async (event) => {
+        event.preventDefault(); report('กำลังเข้าสู่ระบบ…');
+        const { data, error } = await client.auth.signInWithPassword({ email: email.value.trim(), password: password.value });
+        if (error) { report(error?.message || 'เข้าสู่ระบบไม่สำเร็จ', true); return; }
+        if (data.session) openApp();
+      });
+      gate.querySelector('#cb-cloud-register').addEventListener('click', async () => {
+        report('กำลังสร้างบัญชี…');
+        const { error } = await client.auth.signUp({ email: email.value.trim(), password: password.value, options: { emailRedirectTo: location.href } });
+        report(error ? (error?.message || 'สมัครไม่สำเร็จ') : 'ส่งอีเมลยืนยันแล้ว เปิดลิงก์ก่อนเข้าสู่ระบบ', Boolean(error));
+      });
+      return;
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountAuthGate, { once: true });

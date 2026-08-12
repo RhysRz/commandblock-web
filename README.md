@@ -23,6 +23,8 @@
 | 🖥️ พรีวิวเว็บแบบเห็นภาพ | `open_preview` — สร้างหน้าเว็บแล้วเปิดในเบราว์เซอร์ทันที (รันเซิร์ฟเวอร์ local) |
 | 📚 ทักษะเฉพาะทาง (skills) | `list_skills` + `load_skill` — โหลดคำแนะนำเฉพาะทาง (accessibility, API design, Azure ฯลฯ) เหมือนผู้ช่วย AI มืออาชีพ |
 | 🧠 ความจำข้ามเซสชัน | จำบทสนทนาก่อนหน้าได้ (บันทึกใน `buff_session.json` — พิมพ์ `/forget` เพื่อล้าง) |
+| 👤 บัญชีผู้ใช้ (Register/Login) | หน้าเข้าสู่ระบบ/สมัครสมาชิกสวยๆ ในแอป — ใช้บัญชีเดียวกับ CommandBlock Web (Supabase Auth) — **ประวัติแชทและโน้ตแยกเก็บต่อบัญชี** (`.freebuff/sessions/<user_id>.json`, `.freebuff/notes_<user_id>.md`) + **ซิงก์ประวัติแชทกับคลาวด์** (ตาราง conversations/messages เดียวกับเว็บ — ใช้ข้ามเครื่องได้) ออกจากระบบได้ใน Project settings |
+| 🔄 อัปเดตอัตโนมัติ | ตรวจเวอร์ชันใหม่จาก GitHub Releases ตอนเปิดแอป + แจ้งเตือนใต้ช่องส่ง (ดาวน์โหลด/ติดตั้งเอง พร้อมตรวจ SHA-256) + **ปุ่ม "ตรวจอัปเดตตอนนี้" ใน Project settings** เช็คได้ทันทีไม่ต้องปิดเปิดแอป |
 | 🧩 3 แบ็กเอนด์ | Ollama (ท้องถิ่น ไม่ต้องใช้ key) · OpenAI-compatible API · โหมด offline |
 | 🎯 เลือกโมเดลอัตโนมัติ | ตรวจโมเดลใน Ollama และเลือกตัวที่เร็วที่สุดให้อัตโนมัติ |
 | 🔀 สลับโมเดลในแอป | กดปุ่มโมเดลที่ status bar → เลือกได้ทันที (จาก `models` ใน config.json + โมเดล Ollama ที่ติดตั้ง) ไม่ต้องแก้ไฟล์ |
@@ -34,11 +36,13 @@
 ### ใช้งานผ่านเว็บ 🌐
 
 เปิด [Commandblock Web](https://rhysrz.github.io/commandblock-web/) แล้วสมัคร/เข้าสู่ระบบด้วยอีเมล
-หน้าเว็บใช้ UI ชุดเดียวกับแอปเดสก์ท็อป และใช้ DeepSeek Cloud ผ่าน API key ของผู้ใช้เอง
-ซึ่งเก็บไว้เฉพาะ session ของเบราว์เซอร์นั้น ไม่บันทึกลงบัญชีหรือ GitHub
+หน้าเว็บใช้ UI **ชุดเดียวกับแอปเดสก์ท็อป** (หน้าตา 3 คอลัมน์, แถบไอคอน, status bar, แถบโฟลเดอร์ — build จาก `src/ui.html` ตัวเดียวกัน) และมีหน้าเข้าสู่ระบบ/สมัครสมาชิกแบบ glassmorphism เดียวกับ exe (เข้าสู่ระบบด้วยบัญชี Supabase เดียวกัน — เห็นชิปบัญชีใน status bar, ออกจากระบบได้ใน Project settings)
+แชทใช้ DeepSeek Cloud ผ่าน API key ของผู้ใช้เอง ซึ่งเก็บไว้เฉพาะ session ของเบราว์เซอร์นั้น ไม่บันทึกลงบัญชีหรือ GitHub
 
 - ใช้แชท, ประวัติสนทนา, การเลือกโมเดล Cloud และโน้ตชั่วคราวในเบราว์เซอร์ได้
 - แท็บ Files, Changes, Preview, Terminal, เลือกโฟลเดอร์, skills และ startup script ต้องใช้แอปเดสก์ท็อปหรือ Desktop Connector เพราะเบราว์เซอร์ไม่ควรเข้าถึงไฟล์และคำสั่งในเครื่องโดยตรง
+
+การ build เว็บใหม่: `node scripts/build-web.mjs` (เอา `src/ui.html` + `web/cloud-adapter.js` มาประกอบเป็น `site/`) — ทดสอบ local ได้ด้วย `python -m http.server 8080` ในโฟลเดอร์ `site/`
 
 ### Desktop Connector (ใช้ Files และ Terminal จากเว็บ)
 

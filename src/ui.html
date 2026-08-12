@@ -765,9 +765,142 @@
     background: linear-gradient(135deg, rgba(113, 65, 212, .86), rgba(177, 109, 243, .78));
     box-shadow: 0 7px 17px rgba(113, 59, 221, .36), inset 0 1px rgba(255, 255, 255, .25);
   }
+
+  /* ============ AUTH SCREEN (Register / Login) ============ */
+  #authScreen {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(1200px 800px at 15% 10%, #2a1b52 0%, #171233 48%, #0d0a1f 100%);
+    overflow: hidden;
+  }
+  #authScreen[hidden] { display: none; }
+  .auth-bg { position: absolute; inset: 0; overflow: hidden; }
+  .orb {
+    position: absolute; border-radius: 50%; filter: blur(70px);
+    animation: orbFloat 18s ease-in-out infinite alternate;
+  }
+  .orb1 { width: 440px; height: 440px; background: #7c4dff; top: -90px; left: -70px; opacity: .55; }
+  .orb2 { width: 380px; height: 380px; background: #00d4ff; bottom: -110px; right: -50px; opacity: .25; animation-delay: -6s; }
+  .orb3 { width: 280px; height: 280px; background: #ff4dd8; top: 42%; left: 68%; opacity: .20; animation-delay: -11s; }
+  @keyframes orbFloat {
+    from { transform: translate3d(0,0,0) scale(1); }
+    to   { transform: translate3d(46px, 34px, 0) scale(1.14); }
+  }
+  .auth-wrap { position: relative; z-index: 2; width: min(420px, calc(100vw - 40px)); }
+  .auth-card {
+    background: rgba(22, 18, 40, .72);
+    border: 1px solid rgba(167, 139, 250, .25);
+    border-radius: 22px;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, .55), inset 0 1px rgba(255, 255, 255, .06);
+    backdrop-filter: blur(22px) saturate(1.4);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    padding: 34px 30px 26px;
+    text-align: center;
+  }
+  .auth-logo {
+    width: 74px; height: 74px; border-radius: 20px; object-fit: cover;
+    box-shadow: 0 10px 34px rgba(124, 77, 255, .45); margin-bottom: 14px;
+  }
+  .auth-title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: .2px; }
+  .auth-sub { margin: 6px 0 22px; color: var(--muted); font-size: 13px; line-height: 1.5; min-height: 20px; }
+  .auth-tabs {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    background: rgba(255, 255, 255, .05); border-radius: 12px; padding: 5px; margin-bottom: 20px;
+  }
+  .auth-tabs button {
+    border: 0; background: transparent; color: var(--muted); padding: 9px 0; border-radius: 9px;
+    font-size: 13.5px; font-weight: 600; cursor: pointer; transition: all .18s ease;
+  }
+  .auth-tabs button.active {
+    background: linear-gradient(135deg, rgba(113, 65, 212, .9), rgba(177, 109, 243, .85));
+    color: #fff; box-shadow: 0 5px 14px rgba(113, 59, 221, .35);
+  }
+  .auth-form { display: flex; flex-direction: column; gap: 14px; text-align: left; }
+  .auth-form label { display: block; margin-bottom: 6px; color: #cfc6ea; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; }
+  .auth-input {
+    width: 100%; box-sizing: border-box;
+    background: rgba(8, 6, 18, .55); border: 1px solid rgba(167, 139, 250, .22);
+    border-radius: 12px; color: #f2eefc; padding: 12px 14px; font-size: 14px;
+    outline: none; transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .auth-input:focus { border-color: #a06bff; box-shadow: 0 0 0 3px rgba(124, 77, 255, .28); }
+  .auth-input::placeholder { color: #6b6288; }
+  .auth-pass { position: relative; }
+  .auth-pass .auth-input { padding-right: 44px; }
+  .auth-eye {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    background: transparent; border: 0; cursor: pointer; font-size: 15px; padding: 8px; opacity: .6;
+  }
+  .auth-eye:hover { opacity: 1; }
+  .auth-err {
+    background: rgba(255, 61, 113, .12); border: 1px solid rgba(255, 61, 113, .35);
+    color: #ffb3c6; border-radius: 10px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45; text-align: left;
+  }
+  .auth-btn {
+    margin-top: 4px; border: 0; border-radius: 12px; padding: 13px 0; font-size: 15px; font-weight: 700;
+    color: #fff; cursor: pointer;
+    background: linear-gradient(135deg, #7c4dff, #a855f7 55%, #d946ef);
+    box-shadow: 0 10px 26px rgba(124, 77, 255, .4);
+    transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .auth-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 34px rgba(124, 77, 255, .55); filter: brightness(1.06); }
+  .auth-btn:active:not(:disabled) { transform: translateY(0); }
+  .auth-btn:disabled { opacity: .65; cursor: wait; }
+  .auth-btn .spinner {
+    display: inline-block; width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.35);
+    border-top-color: #fff; border-radius: 50%; animation: authSpin .7s linear infinite;
+    vertical-align: -2px; margin-right: 8px;
+  }
+  @keyframes authSpin { to { transform: rotate(360deg); } }
+  .auth-foot { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .auth-skip { background: transparent; border: 0; color: #9b8fc4; font-size: 12.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .auth-skip:hover { color: #cbbcf0; }
+  .auth-hint { color: #6d648c; font-size: 11px; line-height: 1.6; }
+  .auth-hint b { color: #9b8fc4; font-weight: 600; }
+  .accchip {
+    display: inline-flex; align-items: center; gap: 5px; max-width: 240px;
+    color: var(--muted); font-size: 12px; padding: 3px 10px;
+    border: 1px solid rgba(255, 255, 255, .08); border-radius: 999px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 </style>
 </head>
 <body>
+
+<!-- ================= AUTH SCREEN (Register / Login) ================= -->
+<div id="authScreen">
+  <div class="auth-bg"><div class="orb orb1"></div><div class="orb orb2"></div><div class="orb orb3"></div></div>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <img class="auth-logo" src="/assets/buff-command-block.png" alt="CommandBlock">
+      <h2 class="auth-title">CommandBlock</h2>
+      <p class="auth-sub" id="authSub">ลงชื่อเข้าใช้เพื่อแยกเก็บประวัติแชทและโน้ตต่อบัญชี</p>
+      <div class="auth-tabs">
+        <button type="button" id="authTabLogin" class="active">เข้าสู่ระบบ</button>
+        <button type="button" id="authTabSignup">สมัครสมาชิก</button>
+      </div>
+      <form class="auth-form" id="authForm" novalidate>
+        <div>
+          <label for="authEmail">อีเมล</label>
+          <input class="auth-input" id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" spellcheck="false">
+        </div>
+        <div>
+          <label for="authPass">รหัสผ่าน</label>
+          <div class="auth-pass">
+            <input class="auth-input" id="authPass" type="password" autocomplete="current-password" placeholder="รหัสผ่านของคุณ">
+            <button type="button" class="auth-eye" id="authEye" title="แสดง/ซ่อนรหัสผ่าน">👁️</button>
+          </div>
+        </div>
+        <div class="auth-err" id="authErr" hidden></div>
+        <button type="submit" class="auth-btn" id="authSubmit">เข้าสู่ระบบ</button>
+      </form>
+      <div class="auth-foot">
+        <button type="button" class="auth-skip" id="authSkip">ข้ามก่อน — ใช้แบบไม่ระบุตัวตน</button>
+        <div class="auth-hint">ใช้<b>บัญชีเดียวกับ CommandBlock Web</b><br>ประวัติแชท · โน้ต จะแยกเก็บต่อบัญชีบนเครื่องนี้</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ================= ACTIVITY BAR (แถบไอคอนแนวตั้ง) ================= -->
 <nav id="iconrail" title="แถบเครื่องมือ">
@@ -844,6 +977,7 @@
         <div class="modelmenu" id="modelMenu" hidden></div>
       </span>
       <span class="sp"></span>
+      <span class="accchip" id="accChip" title="บัญชีที่ล็อกอิน" hidden>👤 <span id="accEmail"></span></span>
       <span class="usagebar" aria-label="เครดิตและ token">
         <button id="usageCredit" title="ตั้งยอดเครดิต DeepSeek">💳 $0.00 · ≈ ฿0</button>
         <button id="usageTopUp" title="เปิด DeepSeek Platform">+ เติมเงิน</button>
@@ -938,6 +1072,131 @@
 
 <script>
 "use strict";
+
+/* ================= บัญชี / เข้าสู่ระบบ (Supabase เดียวกับ CommandBlock Web) ================= */
+const authScreen = document.getElementById("authScreen");
+const authForm = document.getElementById("authForm");
+const authEmail = document.getElementById("authEmail");
+const authPass = document.getElementById("authPass");
+const authErr = document.getElementById("authErr");
+const authSubmit = document.getElementById("authSubmit");
+const authTabLogin = document.getElementById("authTabLogin");
+const authTabSignup = document.getElementById("authTabSignup");
+const authSub = document.getElementById("authSub");
+const authEye = document.getElementById("authEye");
+let authMode = "login";
+let authBusy = false;
+
+function authShowError(msg){ authErr.textContent = msg || ""; authErr.hidden = !msg; }
+function setAuthMode(mode){
+  authMode = mode;
+  authTabLogin.classList.toggle("active", mode === "login");
+  authTabSignup.classList.toggle("active", mode === "signup");
+  authSub.textContent = mode === "login"
+    ? "ลงชื่อเข้าใช้เพื่อแยกเก็บประวัติแชทและโน้ตต่อบัญชี"
+    : "สมัครบัญชีใหม่ ฟรี — ใช้บัญชีเดียวกับ CommandBlock Web";
+  authSubmit.textContent = mode === "login" ? "เข้าสู่ระบบ" : "สมัครสมาชิก";
+  authPass.autocomplete = mode === "login" ? "current-password" : "new-password";
+  authPass.placeholder = mode === "login" ? "รหัสผ่านของคุณ" : "อย่างน้อย 6 ตัวอักษร";
+  authShowError("");
+}
+authTabLogin.addEventListener("click", () => setAuthMode("login"));
+authTabSignup.addEventListener("click", () => setAuthMode("signup"));
+authEye.addEventListener("click", () => {
+  const show = authPass.type === "password";
+  authPass.type = show ? "text" : "password";
+  authEye.textContent = show ? "🙈" : "👁️";
+});
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (authBusy) return;
+  const email = authEmail.value.trim();
+  const password = authPass.value;
+  if (!email || !password) { authShowError("กรอกอีเมลและรหัสผ่านให้ครบ"); return; }
+  if (authMode === "signup" && password.length < 6) { authShowError("รหัสผ่านต้องยาวอย่างน้อย 6 ตัวอักษร"); return; }
+  authBusy = true;
+  authSubmit.disabled = true;
+  authSubmit.innerHTML = '<span class="spinner"></span>' + (authMode === "login" ? "กำลังเข้าสู่ระบบ…" : "กำลังสมัคร…");
+  authShowError("");
+  try {
+    const r = await fetch("/api/auth/" + (authMode === "login" ? "login" : "signup"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      if (j.confirm) {
+        authShowError("สมัครสำเร็จ! ตรวจอีเมล " + j.email + " แล้วกดลิงก์ยืนยันก่อนเข้าสู่ระบบ ✉️");
+      } else {
+        enterApp(j.email);
+      }
+    } else {
+      authShowError(j.error || "ไม่สำเร็จ — ลองใหม่อีกครั้ง");
+    }
+  } catch (_) {
+    authShowError("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ — ตรวจอินเทอร์เน็ต");
+  } finally {
+    authBusy = false;
+    authSubmit.disabled = false;
+    authSubmit.textContent = authMode === "login" ? "เข้าสู่ระบบ" : "สมัครสมาชิก";
+  }
+});
+function showAuthScreen(){
+  authScreen.hidden = false;
+  authScreen.style.transition = "none";
+  authScreen.style.opacity = "1";
+  authEmail.focus();
+}
+document.getElementById("authSkip").addEventListener("click", () => { enterApp(null); });
+
+function showAccount(email){
+  const chip = document.getElementById("accChip");
+  const desc = document.getElementById("accountDesc");
+  const loginBtn = document.getElementById("accountLogin");
+  const logoutBtn = document.getElementById("accountLogout");
+  if (email) {
+    chip.hidden = false;
+    document.getElementById("accEmail").textContent = email;
+    chip.title = "บัญชี: " + email;
+    desc.textContent = "ล็อกอินด้วย " + email + " — ประวัติแชทและโน้ตแยกเก็บต่อบัญชีบนเครื่องนี้";
+    loginBtn.hidden = true;
+    logoutBtn.hidden = false;
+  } else {
+    chip.hidden = true;
+    desc.textContent = "ยังไม่ได้เข้าสู่ระบบ (แบบไม่ระบุตัวตน) — ข้อมูลเก็บในเครื่องแบบเดิม";
+    loginBtn.hidden = false;
+    logoutBtn.hidden = true;
+  }
+}
+function enterApp(email){
+  authScreen.style.transition = "opacity .45s ease";
+  authScreen.style.opacity = "0";
+  setTimeout(() => { authScreen.hidden = true; }, 420);
+  showAccount(email);
+  if (email) toast("ยินดีต้อนรับ " + email + " 👋", "ok");
+  // รีโหลดสถานะ (session เปลี่ยนตามบัญชี)
+  fetch("/api/state").then(r => r.json()).then(s => {
+    state = s;
+    document.getElementById("statsRight").textContent =
+      (s.skill_count || 0) + " ทักษะ · " + (s.session_messages || 0) + " ข้อความจำ";
+  }).catch(()=>{});
+}
+// ตรวจสถานะบัญชีตอนเปิดแอป — ล็อกอินอยู่แล้ว = ข้ามหน้าแรก
+(async () => {
+  try {
+    const j = await fetch("/api/auth/status").then(r => r.json());
+    if (j.logged_in) {
+      authScreen.hidden = true;
+      showAccount(j.email);
+    } else {
+      authScreen.hidden = false;
+      authEmail.focus();
+    }
+  } catch (_) {
+    authScreen.hidden = false;
+  }
+})();
+
 const chat = document.getElementById("chat");
 const wrap = chat.querySelector(".wrap");
 const input = document.getElementById("input");
@@ -1597,6 +1856,22 @@ document.getElementById("fb").addEventListener("click",()=>{
         <div class="startup-log" id="startupLog"></div>
       </div>
       <div class="set-sec">
+        <div class="set-label">บัญชี</div>
+        <div class="set-desc" id="accountDesc">ยังไม่ได้เข้าสู่ระบบ — สมัคร/เข้าสู่ระบบเพื่อแยกเก็บประวัติแชทและโน้ตต่อบัญชี</div>
+        <div class="backup-row">
+          <button class="btn-cancel" id="accountLogin" type="button">เข้าสู่ระบบ / สมัครสมาชิก</button>
+          <button class="btn-cancel" id="accountLogout" type="button" hidden>ออกจากระบบ</button>
+        </div>
+      </div>
+      <div class="set-sec">
+        <div class="set-label">อัปเดต</div>
+        <div class="set-desc" id="updateDesc">กำลังโหลดสถานะอัปเดต…</div>
+        <div class="backup-row">
+          <button class="btn-cancel" id="updateCheckBtn" type="button">🔄 ตรวจอัปเดตตอนนี้</button>
+          <button class="btn-cancel" id="updateGoBtn" type="button" hidden>⬇ ดาวน์โหลดอัปเดต</button>
+        </div>
+      </div>
+      <div class="set-sec">
         <div class="set-label">Backup & Restore</div>
         <div class="set-desc">สำรอง config.json และ Project settings ไว้ในเครื่องก่อนอัปเดตอัตโนมัติ เก็บล่าสุด 5 ชุด</div>
         <div class="backup-row">
@@ -1677,6 +1952,7 @@ function openSettings(){
     renderSkillGrid("");
     renderStartupLog();
     refreshBackups();
+    renderUpdateCheck();
     settingsModal.hidden = false;
   }).catch(()=>{ toast("โหลดการตั้งค่าไม่สำเร็จ", "err"); });
 }
@@ -1789,6 +2065,61 @@ document.getElementById("settingsSave").addEventListener("click", async ()=>{
   }catch(e){ toast("เกิดข้อผิดพลาด: " + e, "err"); }
 });
 document.addEventListener("keydown", e=>{ if(e.key === "Escape" && !settingsModal.hidden) closeSettings(); });
+/* ---------- ตรวจอัปเดตทันที (Project settings) ---------- */
+async function renderUpdateCheck(){
+  const desc = document.getElementById("updateDesc");
+  const goBtn = document.getElementById("updateGoBtn");
+  // ถ้ากำลังตรวจ (ตรวจ GitHub ใช้เวลา 1-3 วิ) ให้ poll ต่อจนกว่าจะได้ผล
+  for (let attempt = 0; attempt < 8; attempt++) {
+    let s;
+    try { s = await fetch("/api/update").then(r => r.json()); }
+    catch (_) { desc.textContent = "เชื่อมต่อระบบอัปเดตไม่ได้"; return; }
+    if (s.state === "checking") {
+      desc.textContent = "กำลังตรวจหาอัปเดต…";
+      await new Promise(r => setTimeout(r, 600));
+      continue;
+    }
+    if (s.state === "up_to_date") { desc.textContent = "คุณใช้ CommandBlock เวอร์ชันล่าสุดแล้ว ✓"; goBtn.hidden = true; }
+    else if (s.state === "available") { desc.textContent = "มีเวอร์ชันใหม่: " + (s.tag || "") + " — กดดาวน์โหลดเพื่ออัปเดต"; goBtn.hidden = false; }
+    else if (s.state === "downloading") { desc.textContent = "กำลังดาวน์โหลดอัปเดต" + (s.percent != null ? " " + s.percent + "%" : "…"); goBtn.hidden = true; }
+    else if (s.state === "ready") { desc.textContent = "ดาวน์โหลดเสร็จแล้ว — กด 'ติดตั้งและเปิดใหม่' ที่แถบใต้ช่องพิมพ์"; goBtn.hidden = true; }
+    else if (s.state === "error") { desc.textContent = "ตรวจอัปเดตไม่สำเร็จ: " + (s.message || "ไม่ทราบสาเหตุ"); goBtn.hidden = true; }
+    else { desc.textContent = "สถานะอัปเดต: " + s.state; goBtn.hidden = true; }
+    return;
+  }
+  desc.textContent = "กำลังตรวจหาอัปเดต… (ใช้เวลานานผิดปกติ)";
+}
+document.getElementById("updateCheckBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("updateCheckBtn");
+  btn.disabled = true;
+  btn.textContent = "กำลังตรวจ…";
+  try {
+    await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "check" }) });
+  } catch (_) {}
+  await renderUpdateCheck();
+  btn.disabled = false;
+  btn.textContent = "🔄 ตรวจอัปเดตตอนนี้";
+});
+document.getElementById("updateGoBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("updateGoBtn");
+  btn.disabled = true;
+  try {
+    await fetch("/api/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "download" }) });
+  } catch (_) {}
+  await renderUpdateCheck();
+  btn.disabled = false;
+});
+document.getElementById("accountLogin").addEventListener("click", () => {
+  closeSettings();
+  showAuthScreen();
+});
+document.getElementById("accountLogout").addEventListener("click", async () => {
+  if (!confirm("ออกจากระบบ? ข้อมูลของบัญชีนี้ยังเก็บอยู่บนเครื่อง")) return;
+  try {
+    await fetch("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  } catch (_) {}
+  location.reload();
+});
 </script>
 </body>
 </html>
