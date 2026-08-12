@@ -12,5 +12,8 @@ test('Windows releases are triggered only by runtime source changes', () => {
   assert.match(release, /paths:/);
   assert.match(release, /'src\/\*\*'/);
   assert.match(release, /'Cargo\.toml'/);
+  assert.match(release, /commandblock\.exe --build-id/);
+  assert.match(release, /gh release view \$tag/);
+  assert.match(release, /gh release create \$tag/);
   assert.match(release, /gh release create/);
 });

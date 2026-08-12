@@ -50,6 +50,23 @@ pub fn build_matches_tag(tag: &str, build: &str) -> bool {
     tag.strip_prefix("build-") == Some(build)
 }
 
+pub fn release_is_newer(
+    tag: &str,
+    published_at: &str,
+    current_build: &str,
+    current_timestamp: i64,
+) -> bool {
+    if build_matches_tag(tag, current_build) {
+        return false;
+    }
+    time::OffsetDateTime::parse(
+        published_at,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .map(|published| published.unix_timestamp() > current_timestamp)
+    .unwrap_or(false)
+}
+
 pub fn check_for_update_async() {
     set_status(UpdateStatus::Checking);
     std::thread::spawn(|| match latest_release() {
@@ -152,6 +169,9 @@ pub fn launch_staged_update() -> Result<(), String> {
 
 fn latest_release() -> Result<Option<Release>, String> {
     let current = env!("COMMAND_BLOCK_BUILD_ID");
+    let current_timestamp = env!("COMMAND_BLOCK_BUILD_TIMESTAMP")
+        .parse::<i64>()
+        .unwrap_or(i64::MAX);
     let response: Value = ureq::get(RELEASE_URL)
         .set("User-Agent", "CommandBlock-Updater")
         .call()
@@ -162,7 +182,11 @@ fn latest_release() -> Result<Option<Release>, String> {
         .get("tag_name")
         .and_then(Value::as_str)
         .ok_or("ไม่มี release tag")?;
-    if build_matches_tag(tag, current) {
+    let published_at = response
+        .get("published_at")
+        .and_then(Value::as_str)
+        .ok_or("release ไม่มีเวลาเผยแพร่")?;
+    if !release_is_newer(tag, published_at, current, current_timestamp) {
         return Ok(None);
     }
     let assets = response
@@ -314,13 +338,41 @@ fn updates_dir() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_matches_tag, progress_percent};
+    use super::{build_matches_tag, progress_percent, release_is_newer};
 
     #[test]
     fn only_the_same_release_build_is_considered_current() {
         assert!(build_matches_tag("build-abc123", "abc123"));
         assert!(!build_matches_tag("build-def456", "abc123"));
         assert!(!build_matches_tag("v1.0.0", "abc123"));
+    }
+
+    #[test]
+    fn only_newer_runtime_releases_are_offered() {
+        assert!(release_is_newer(
+            "build-next",
+            "2026-08-12T16:00:00Z",
+            "current",
+            1_786_500_000
+        ));
+        assert!(!release_is_newer(
+            "build-current",
+            "2026-08-12T16:00:00Z",
+            "current",
+            1
+        ));
+        assert!(!release_is_newer(
+            "build-next",
+            "2026-08-12T15:00:00Z",
+            "current",
+            1_786_700_000
+        ));
+        assert!(!release_is_newer(
+            "build-next",
+            "not-a-timestamp",
+            "current",
+            1
+        ));
     }
 
     #[test]

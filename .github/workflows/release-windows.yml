@@ -27,4 +27,14 @@ jobs:
           Compress-Archive -Path package\* -DestinationPath CommandBlock-Windows-x64.zip
           (Get-FileHash CommandBlock-Windows-x64.zip -Algorithm SHA256).Hash.ToLower() | Set-Content CommandBlock-Windows-x64.zip.sha256 -NoNewline
       - env: { GH_TOKEN: '${{ github.token }}' }
-        run: gh release create build-${{ github.sha }} CommandBlock-Windows-x64.zip CommandBlock-Windows-x64.zip.sha256 --title "CommandBlock build ${{ github.sha }}" --generate-notes --latest
+        shell: pwsh
+        run: |
+          $buildId = (& .\target\release\commandblock.exe --build-id).Trim()
+          if ([string]::IsNullOrWhiteSpace($buildId)) { throw "Unable to determine CommandBlock runtime build ID" }
+          $tag = "build-$buildId"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Runtime release $tag already exists; skipping duplicate release."
+            exit 0
+          }
+          gh release create $tag CommandBlock-Windows-x64.zip CommandBlock-Windows-x64.zip.sha256 --title "CommandBlock build $buildId" --generate-notes --latest

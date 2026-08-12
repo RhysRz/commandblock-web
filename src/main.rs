@@ -87,10 +87,14 @@ const SESSION_FILE: &str = "buff_session.json"; // ความจำข้า�
 const SESSION_KEEP: usize = 20; // จำนวนข้อความล่าสุดที่บันทึกลง session
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--build-id") {
+        println!("{}", env!("COMMAND_BLOCK_BUILD_ID"));
+        return;
+    }
     if update::apply_staged_update() {
         return;
     }
-    let args: Vec<String> = std::env::args().collect();
     update::check_for_update_async();
 
     if args.len() >= 2 {

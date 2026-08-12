@@ -24,7 +24,7 @@ futures = "0.3"
 scrap = "0.5"
 webrtc = "0.20.0-alpha.1"
 enigo = { version = "0.6", default-features = false, features = ["platform_specific"] }
-time = { version = "0.3", features = ["formatting"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
 
 [build-dependencies]
 winres = "0.1"
