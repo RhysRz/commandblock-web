@@ -6,6 +6,7 @@ config.json
 buff_session.json
 .freebuff/
 .worktrees/
+supabase/.temp/
 
 # Build output and bundled runtime
 target/
