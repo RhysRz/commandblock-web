@@ -85,7 +85,10 @@
       if (!response.ok || data.error) throw new Error(data.error || 'Cloud chat ไม่สำเร็จ');
       const content = String(data.content || '');
       await saveMessage(session, 'assistant', content);
-      return sse([event('content', { t: content })]);
+      const usage = data.usage && typeof data.usage === 'object' ? data.usage : {
+        prompt_tokens: Math.ceil(message.length / 4), completion_tokens: Math.ceil(content.length / 4), total_tokens: Math.ceil((message.length + content.length) / 4), exact: false,
+      };
+      return sse([event('content', { t: content }), event('usage', usage)]);
     } catch (error) {
       return sse([event('note', { t: error.message || 'ไม่สามารถเชื่อมต่อ Cloud chat ได้' })], 400);
     }

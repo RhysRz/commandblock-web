@@ -65,9 +65,22 @@ pub fn estimate_usage(messages: &[Value], completion: &str) -> TokenUsage {
     }
 }
 
+/// การสลับโมเดลทำเฉพาะเมื่อ provider หลักเข้าไม่ถึงหรือเครดิต/โควตาหมด
+/// ไม่สลับเมื่อ key หรือชื่อโมเดลผิด เพราะ fallback มักจะตั้งค่าผิดตามกันได้
+pub fn should_try_fallback(error: &str) -> bool {
+    let normalized = error.to_ascii_lowercase();
+    normalized.contains("http 402")
+        || normalized.contains("http 429")
+        || normalized.contains("http 500")
+        || normalized.contains("http 502")
+        || normalized.contains("http 503")
+        || normalized.contains("http 504")
+        || normalized.contains("เชื่อมต่อไม่สำเร็จ")
+}
+
 #[cfg(test)]
 mod usage_tests {
-    use super::parse_usage;
+    use super::{parse_usage, should_try_fallback};
     use serde_json::json;
 
     #[test]
@@ -80,6 +93,13 @@ mod usage_tests {
         assert_eq!(usage.completion_tokens, 8);
         assert_eq!(usage.total_tokens, 20);
         assert!(usage.exact);
+    }
+
+    #[test]
+    fn fallback_is_only_for_credit_quota_or_connectivity_errors() {
+        assert!(should_try_fallback("[API] HTTP 402: no credit"));
+        assert!(should_try_fallback("[API] HTTP 429: rate limited"));
+        assert!(!should_try_fallback("[API] HTTP 401: bad API key"));
     }
 }
 

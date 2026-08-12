@@ -1161,11 +1161,12 @@ fn handle_chat(
 
     let mut g = shared.lock().unwrap();
     let cur_eff = g.current_eff();
+    let configured_models = g.cfg_models.clone();
     {
         let Shared { history, plan, .. } = &mut *g;
         history.push(json!({"role": "user", "content": user_content}));
         let mut sink = SseSink { out };
-        crate::run_turn(agent, &cur_eff, history, plan, &mut sink);
+        crate::run_turn(agent, &cur_eff, &configured_models, history, plan, &mut sink);
     }
     crate::save_session(&g.history);
     drop(g);

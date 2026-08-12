@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const cors = { 'access-control-allow-origin': Deno.env.get('ALLOWED_ORIGIN') ?? '*', 'access-control-allow-headers': 'authorization, content-type', 'content-type': 'application/json' };
-const reply = (body: Record<string, string>, status = 200) => new Response(JSON.stringify(body), { status, headers: cors });
+const reply = (body: Record<string, unknown>, status = 200) => new Response(JSON.stringify(body), { status, headers: cors });
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
@@ -17,5 +17,8 @@ Deno.serve(async (request) => {
   const upstream = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'user', content: message }] }) });
   if (!upstream.ok) return reply({ error: 'โมเดลตอบกลับไม่สำเร็จ โปรดตรวจ API key และเครดิต' }, upstream.status);
   const data = await upstream.json();
-  return reply({ content: data.choices?.[0]?.message?.content ?? '' });
+  return reply({
+    content: data.choices?.[0]?.message?.content ?? '',
+    usage: data.usage ? { ...data.usage, exact: true } : null,
+  });
 });

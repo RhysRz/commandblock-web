@@ -7,10 +7,13 @@ use std::time::Duration;
 
 const SUPABASE_URL: &str = "https://qympivgklmstrnhfaywn.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY: &str = "sb_publishable_UJMuyL3QY8lMEWJKZi3zAQ_NFKZY8TH";
+const CONNECTOR_CREDENTIAL_SERVICE: &str = "CommandBlock Desktop Connector";
+const CONNECTOR_CREDENTIAL_ACCOUNT: &str = "default";
 
 struct ConnectorSession {
     token: String,
     user_id: String,
+    refresh_token: String,
 }
 
 /// เปิด Connector แบบ console แยกจากแอป GUI เพื่อให้ Windows ส่ง stdin/stdout ได้ถูกต้อง
@@ -47,13 +50,23 @@ pub fn safe_child(root: &Path, requested: &str) -> Result<PathBuf, String> {
 
 pub fn run(agent: ureq::Agent) -> Result<(), String> {
     println!("CommandBlock Desktop Connector");
-    println!("ลงชื่อเข้าใช้บัญชีเดียวกับ CommandBlock Web (session นี้จะไม่บันทึกรหัสผ่าน)");
-    let email = prompt("อีเมล: ")?;
-    let password = rpassword::prompt_password("รหัสผ่าน: ").map_err(|e| e.to_string())?;
-    if password.trim().is_empty() {
-        return Err("ห้ามเว้นว่าง".to_string());
-    }
-    let session = sign_in(&agent, &email, &password)?;
+    let session = match restore_session(&agent) {
+        Ok(Some(session)) => {
+            println!("ใช้ session ที่บันทึกไว้ใน Windows Credential Manager");
+            session
+        }
+        Ok(None) | Err(_) => {
+            println!("ลงชื่อเข้าใช้บัญชีเดียวกับ CommandBlock Web (จะไม่บันทึกรหัสผ่าน)");
+            let email = prompt("อีเมล: ")?;
+            let password = rpassword::prompt_password("รหัสผ่าน: ").map_err(|e| e.to_string())?;
+            if password.trim().is_empty() {
+                return Err("ห้ามเว้นว่าง".to_string());
+            }
+            let session = sign_in(&agent, &email, &password)?;
+            save_refresh_token(&session.refresh_token)?;
+            session
+        }
+    };
     let mut root = rfd::FileDialog::new()
         .set_title("เลือกโฟลเดอร์สำหรับ CommandBlock Web")
         .pick_folder()
@@ -123,6 +136,38 @@ fn sign_in(agent: &ureq::Agent, email: &str, password: &str) -> Result<Connector
         .map_err(|_| "เข้าสู่ระบบ Connector ไม่สำเร็จ".to_string())?
         .into_json()
         .map_err(|_| "อ่าน session Connector ไม่สำเร็จ".to_string())?;
+    session_from_response(response)
+}
+
+fn restore_session(agent: &ureq::Agent) -> Result<Option<ConnectorSession>, String> {
+    let entry = keyring::Entry::new(CONNECTOR_CREDENTIAL_SERVICE, CONNECTOR_CREDENTIAL_ACCOUNT)
+        .map_err(|error| format!("เปิด Windows Credential Manager ไม่สำเร็จ: {error}"))?;
+    let refresh_token = match entry.get_password() {
+        Ok(token) if !token.trim().is_empty() => token,
+        Ok(_) | Err(keyring::Error::NoEntry) => return Ok(None),
+        Err(error) => return Err(format!("อ่าน session ที่บันทึกไว้ไม่สำเร็จ: {error}")),
+    };
+    let response: Value = agent
+        .post(&format!("{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token"))
+        .set("apikey", SUPABASE_PUBLISHABLE_KEY)
+        .set("Content-Type", "application/json")
+        .send_json(json!({"refresh_token": refresh_token}))
+        .map_err(|_| "session เดิมหมดอายุ".to_string())?
+        .into_json()
+        .map_err(|_| "อ่าน session เดิมไม่สำเร็จ".to_string())?;
+    let session = session_from_response(response)?;
+    save_refresh_token(&session.refresh_token)?;
+    Ok(Some(session))
+}
+
+fn save_refresh_token(refresh_token: &str) -> Result<(), String> {
+    keyring::Entry::new(CONNECTOR_CREDENTIAL_SERVICE, CONNECTOR_CREDENTIAL_ACCOUNT)
+        .map_err(|error| format!("เปิด Windows Credential Manager ไม่สำเร็จ: {error}"))?
+        .set_password(refresh_token)
+        .map_err(|error| format!("บันทึก session Connector ไม่สำเร็จ: {error}"))
+}
+
+fn session_from_response(response: Value) -> Result<ConnectorSession, String> {
     let token = response
         .get("access_token")
         .and_then(Value::as_str)
@@ -134,7 +179,12 @@ fn sign_in(agent: &ureq::Agent, email: &str, password: &str) -> Result<Connector
         .and_then(Value::as_str)
         .map(str::to_string)
         .ok_or_else(|| "อ่านข้อมูลผู้ใช้ Connector ไม่สำเร็จ".to_string())?;
-    Ok(ConnectorSession { token, user_id })
+    let refresh_token = response
+        .get("refresh_token")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| "อ่าน refresh session Connector ไม่สำเร็จ".to_string())?;
+    Ok(ConnectorSession { token, user_id, refresh_token })
 }
 
 fn auth<'a>(request: ureq::Request, token: &'a str) -> ureq::Request {
