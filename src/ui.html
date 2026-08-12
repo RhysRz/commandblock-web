@@ -334,7 +334,7 @@
   .usagebar #usageTopUp { border-color:rgba(194,140,255,.55); color:#f2eaff; background:rgba(139,108,246,.18); }
   .usagebar #usageTokens { color:var(--muted); overflow:hidden; text-overflow:ellipsis; }
   .update-notice {
-    display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 7px 9px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 7px 9px;
     border: 1px solid rgba(166, 109, 255, .48); border-radius: 9px;
     background: rgba(139, 108, 246, .10); font-size: 11.5px;
   }
@@ -346,6 +346,11 @@
   @keyframes update-sweep { from { transform: translateX(-45%); } to { transform: translateX(165%); } }
   #updateDownload { flex: none; border: 1px solid rgba(194, 140, 255, .55); border-radius: 7px; padding: 4px 8px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
   #updateDownload:disabled { cursor: wait; opacity: .7; }
+  .update-notes { width: 100%; color: var(--muted); }
+  .update-notes summary { cursor: pointer; color: var(--text); font-size: 11px; }
+  .update-notes pre { margin: 6px 0 0; max-height: 110px; overflow: auto; white-space: pre-wrap; font: 10.5px/1.5 Consolas, monospace; color: var(--muted); }
+  .backup-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .backup-row select { flex: 1; min-width: 180px; background: var(--ink); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; font: 12px Consolas, monospace; }
   /* dropdown เลือกโมเดล */
   .modelwrap { position: relative; display: inline-flex; }
   .modelmenu {
@@ -829,6 +834,7 @@
       <span class="update-progress" id="updateProgress" hidden><i></i></span>
       <button id="updateDownload" hidden>ดาวน์โหลด</button>
       <button id="updateInstall" hidden>ติดตั้งและเปิดใหม่</button>
+      <details class="update-notes" id="updateNotes" hidden><summary>รายการเปลี่ยนแปลง</summary><pre id="updateNotesText"></pre><a id="updateNotesLink" target="_blank" rel="noopener" hidden>เปิด release บน GitHub</a></details>
     </div>
     <input type="file" id="fileInput" multiple hidden>
     <div class="statusbar">
@@ -1006,6 +1012,9 @@ const updateProgress = document.getElementById("updateProgress");
 const updateProgressFill = updateProgress.querySelector("i");
 const updateDownload = document.getElementById("updateDownload");
 const updateInstall = document.getElementById("updateInstall");
+const updateNotes = document.getElementById("updateNotes");
+const updateNotesText = document.getElementById("updateNotesText");
+const updateNotesLink = document.getElementById("updateNotesLink");
 function updateSize(bytes){
   if (!Number.isFinite(bytes) || bytes < 0) return "";
   if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
@@ -1020,6 +1029,13 @@ function renderUpdate(s){
   updateDownload.disabled = s.state === "downloading";
   updateProgress.hidden = s.state !== "downloading";
   updateProgress.classList.toggle("indeterminate", s.state === "downloading" && !Number.isFinite(s.percent));
+  const hasNotes = s.state === "available" && (!!s.release_notes || !!s.release_url);
+  updateNotes.hidden = !hasNotes;
+  if (hasNotes) {
+    updateNotesText.textContent = s.release_notes || "ไม่มีรายละเอียดเพิ่มเติม";
+    updateNotesLink.hidden = !s.release_url;
+    updateNotesLink.href = s.release_url || "#";
+  }
   if (s.state === "available") updateText.textContent = "มี CommandBlock รุ่นใหม่พร้อมให้ดาวน์โหลด";
   if (s.state === "downloading") {
     const detail = Number.isFinite(s.total) ? " · " + updateSize(s.downloaded || 0) + " / " + updateSize(s.total) : "";
@@ -1047,7 +1063,7 @@ updateInstall.addEventListener("click", async () => {
     const response = await fetch("/api/update", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action:"install"}) });
     const state = await response.json();
     updateText.textContent = state.error || "กำลังติดตั้งและเปิด CommandBlock ใหม่…";
-    if (!state.error) setTimeout(() => window.close(), 250);
+    if (!state.error) updateText.textContent = "กำลังติดตั้งและเปิด CommandBlock ใหม่…";
   } catch (_) { updateText.textContent = "เริ่มติดตั้งอัปเดตไม่ได้ — ปิดและเปิด CommandBlock ใหม่อีกครั้ง"; }
 });
 refreshUpdate();
@@ -1580,6 +1596,20 @@ document.getElementById("fb").addEventListener("click",()=>{
         <div class="set-desc">ประวัติผลลัพธ์ของ startup script ย้อนหลัง (บันทึกทุกครั้งที่รัน — เก็บ 60 รายการล่าสุด)</div>
         <div class="startup-log" id="startupLog"></div>
       </div>
+      <div class="set-sec">
+        <div class="set-label">Backup & Restore</div>
+        <div class="set-desc">สำรอง config.json และ Project settings ไว้ในเครื่องก่อนอัปเดตอัตโนมัติ เก็บล่าสุด 5 ชุด</div>
+        <div class="backup-row">
+          <button class="btn-cancel" id="backupCreate" type="button">💾 สำรองตอนนี้</button>
+          <select id="backupList" aria-label="รายการ backup"></select>
+          <button class="btn-cancel" id="backupRestore" type="button">↩ กู้คืน</button>
+        </div>
+      </div>
+      <div class="set-sec">
+        <div class="set-label">Diagnostic report</div>
+        <div class="set-desc">คัดลอกรายงาน crash ล่าสุดสำหรับส่งให้ผู้พัฒนา รายงานไม่มี API key และเนื้อหาแชท</div>
+        <button class="btn-cancel" id="diagnosticCopy" type="button">📋 คัดลอกรายงานปัญหา</button>
+      </div>
     </div>
     <div class="modal-foot">
       <span class="set-path" id="setPath"></span>
@@ -1646,6 +1676,7 @@ function openSettings(){
     selSkills = new Set(j.skills || []);
     renderSkillGrid("");
     renderStartupLog();
+    refreshBackups();
     settingsModal.hidden = false;
   }).catch(()=>{ toast("โหลดการตั้งค่าไม่สำเร็จ", "err"); });
 }
@@ -1697,6 +1728,47 @@ function renderSkillGrid(filter){
 function updateSkillCount(){
   document.getElementById("skillCount").textContent = selSkills.size + "/" + allSkills.length + " ทักษะเปิดใช้";
 }
+async function refreshBackups(){
+  try{
+    const j = await fetch("/api/backups").then(r=>r.json());
+    const select = document.getElementById("backupList");
+    select.innerHTML = "";
+    const backups = j.backups || [];
+    if(!backups.length){
+      select.innerHTML = '<option value="">ยังไม่มี backup</option>';
+      document.getElementById("backupRestore").disabled = true;
+      return;
+    }
+    backups.forEach(b=>{
+      const date = new Date(Number(b.created_at||0)*1000).toLocaleString("th-TH");
+      const option = document.createElement("option"); option.value = b.name; option.textContent = date; select.appendChild(option);
+    });
+    document.getElementById("backupRestore").disabled = false;
+  }catch(_){ toast("โหลดรายการ backup ไม่สำเร็จ", "err"); }
+}
+document.getElementById("backupCreate").addEventListener("click", async()=>{
+  try{
+    const j = await fetch("/api/backup", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"create"})}).then(r=>r.json());
+    if(!j.ok) throw new Error(j.error || "สำรองไม่สำเร็จ");
+    await refreshBackups(); toast("สำรองการตั้งค่าแล้ว", "ok");
+  }catch(e){ toast("สำรองไม่สำเร็จ: " + e.message, "err"); }
+});
+document.getElementById("backupRestore").addEventListener("click", async()=>{
+  const name = document.getElementById("backupList").value;
+  if(!name || !confirm("กู้คืนการตั้งค่าชุดนี้? การตั้งค่าปัจจุบันจะถูกแทนที่")) return;
+  try{
+    const j = await fetch("/api/backup", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"restore", name})}).then(r=>r.json());
+    if(!j.ok) throw new Error(j.error || "กู้คืนไม่สำเร็จ");
+    toast("กู้คืนแล้ว — ปิดและเปิด CommandBlock ใหม่เพื่อใช้การตั้งค่า", "ok");
+  }catch(e){ toast("กู้คืนไม่สำเร็จ: " + e.message, "err"); }
+});
+document.getElementById("diagnosticCopy").addEventListener("click", async()=>{
+  try{
+    const j = await fetch("/api/diagnostics").then(r=>r.json());
+    await navigator.clipboard.writeText(j.report || "");
+    toast("คัดลอกรายงานปัญหาแล้ว", "ok");
+  }catch(_){ toast("คัดลอกรายงานไม่สำเร็จ", "err"); }
+});
 document.getElementById("skillSearch").addEventListener("input", e=>renderSkillGrid(e.target.value));
 settingsBtn.addEventListener("click", openSettings);
 document.getElementById("settingsX").addEventListener("click", closeSettings);

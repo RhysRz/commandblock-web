@@ -5,7 +5,7 @@
 //! - GET  /api/state   สถานะแบ็กเอนด์/โมเดล/จำนวนข้อความ
 //! - POST /api/chat    ส่งข้อความ → สตรีมคำตอบกลับเป็น SSE (content/tool/note/done)
 
-use crate::{config, connector, remote, tools, update, TurnSink};
+use crate::{config, connector, diagnostics, remote, tools, update, TurnSink};
 use image::GenericImageView;
 use serde_json::{json, Value};
 use std::io::{BufWriter, Read, Write};
@@ -719,6 +719,22 @@ fn handle(
                 state.to_string().as_bytes(),
             );
         }
+        ("GET", "/api/diagnostics") => respond(
+            &mut out,
+            200,
+            "application/json",
+            json!({"report": diagnostics::latest_report()})
+                .to_string()
+                .as_bytes(),
+        ),
+        ("GET", "/api/backups") => respond(
+            &mut out,
+            200,
+            "application/json",
+            json!({"backups": diagnostics::list_backups()})
+                .to_string()
+                .as_bytes(),
+        ),
         ("POST", "/api/update") => {
             let action = serde_json::from_str::<Value>(&body_str)
                 .ok()
@@ -736,6 +752,7 @@ fn handle(
                 "install" => update::launch_staged_update().map(|_| json!({"state": "installing"})),
                 _ => Err("ไม่รู้จักคำสั่งอัปเดต".to_string()),
             };
+            let should_exit = action == "install" && result.is_ok();
             match result {
                 Ok(state) => respond(
                     &mut out,
@@ -748,6 +765,32 @@ fn handle(
                     409,
                     "application/json",
                     json!({"error": message}).to_string().as_bytes(),
+                ),
+            }
+            if should_exit {
+                schedule_process_exit();
+            }
+        }
+        ("POST", "/api/backup") => {
+            let value = serde_json::from_str::<Value>(&body_str).unwrap_or_default();
+            let action = value.get("action").and_then(Value::as_str).unwrap_or_default();
+            let result = match action {
+                "create" => diagnostics::create_backup().map(|backup| json!({"ok": true, "backup": backup})),
+                "restore" => value
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "ไม่ได้ระบุ backup".to_string())
+                    .and_then(|name| diagnostics::restore_backup(name))
+                    .map(|_| json!({"ok": true})),
+                _ => Err("ไม่รู้จักคำสั่ง backup".to_string()),
+            };
+            match result {
+                Ok(value) => respond(&mut out, 200, "application/json", value.to_string().as_bytes()),
+                Err(error) => respond(
+                    &mut out,
+                    409,
+                    "application/json",
+                    json!({"ok": false, "error": error}).to_string().as_bytes(),
                 ),
             }
         }
@@ -1410,6 +1453,13 @@ fn respond(out: &mut BufWriter<TcpStream>, status: u16, ctype: &str, body: &[u8]
     .ok();
     let _ = out.write_all(body);
     let _ = out.flush();
+}
+
+fn schedule_process_exit() {
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(450));
+        std::process::exit(0);
+    });
 }
 
 fn find_subslice(hay: &[u8], needle: &[u8]) -> Option<usize> {

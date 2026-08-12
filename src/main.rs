@@ -11,7 +11,7 @@ mod config;
 mod gui;
 mod llm;
 
-use commandblock::connector;
+use commandblock::{connector, diagnostics};
 use commandblock::remote;
 pub use commandblock::tools;
 use commandblock::update;
@@ -87,6 +87,7 @@ const SESSION_FILE: &str = "buff_session.json"; // ความจำข้า�
 const SESSION_KEEP: usize = 20; // จำนวนข้อความล่าสุดที่บันทึกลง session
 
 fn main() {
+    diagnostics::install_panic_reporter();
     let args: Vec<String> = std::env::args().collect();
     if update::apply_staged_update() {
         return;

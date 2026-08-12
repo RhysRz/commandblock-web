@@ -12,6 +12,9 @@ const CHECKSUM: &str = "CommandBlock-Windows-x64.zip.sha256";
 #[derive(Clone, Debug)]
 struct Release {
     tag: String,
+    notes: String,
+    published_at: String,
+    release_url: String,
     package_url: String,
     checksum_url: String,
     package_size: Option<u64>,
@@ -116,6 +119,9 @@ pub fn status_json() -> Value {
             "state": "available",
             "tag": release.tag,
             "total": release.package_size,
+            "release_notes": release.notes,
+            "published_at": release.published_at,
+            "release_url": release.release_url,
         }),
         UpdateStatus::Downloading {
             tag,
@@ -140,6 +146,8 @@ pub fn apply_staged_update() -> bool {
 }
 
 pub fn launch_staged_update() -> Result<(), String> {
+    crate::diagnostics::create_backup()
+        .map_err(|error| format!("สำรองการตั้งค่าก่อนอัปเดตไม่ได้: {error}"))?;
     let Ok(current) = std::env::current_exe() else {
         return Err("ไม่พบตำแหน่ง CommandBlock".to_string());
     };
@@ -209,6 +217,17 @@ fn latest_release() -> Result<Option<Release>, String> {
         .ok_or("ไม่พบ checksum แพ็กเกจ")?;
     Ok(Some(Release {
         tag: tag.to_string(),
+        notes: response
+            .get("body")
+            .and_then(Value::as_str)
+            .unwrap_or("ไม่มีรายละเอียดเพิ่มเติม")
+            .to_string(),
+        published_at: published_at.to_string(),
+        release_url: response
+            .get("html_url")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         package_url: package_url.to_string(),
         checksum_url: checksum_url.to_string(),
         package_size: package.get("size").and_then(Value::as_u64),

@@ -108,21 +108,7 @@ fn parse_backend(s: &str) -> Backend {
 }
 
 pub fn load() -> Config {
-    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let exe_dir = env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
-
-    // หา config.json: cwd ก่อน, แล้วข้างไฟล์ .exe
-    let mut config_path = cwd.join("config.json");
-    if !config_path.exists() {
-        if let Some(d) = &exe_dir {
-            let alt = d.join("config.json");
-            if alt.exists() {
-                config_path = alt;
-            }
-        }
-    }
+    let config_path = config_path();
 
     let mut file_backend = String::new();
     let mut file_url = String::new();
@@ -191,6 +177,34 @@ pub fn load() -> Config {
             }
         }
     }
+
+    load_from_values(file_backend, file_url, file_key, file_model, file_models)
+}
+
+pub fn config_path() -> PathBuf {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let exe_dir = env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+    let mut config_path = cwd.join("config.json");
+    if !config_path.exists() {
+        if let Some(d) = &exe_dir {
+            let alt = d.join("config.json");
+            if alt.exists() {
+                config_path = alt;
+            }
+        }
+    }
+    config_path
+}
+
+fn load_from_values(
+    file_backend: String,
+    file_url: String,
+    file_key: String,
+    file_model: String,
+    file_models: Vec<ModelEntry>,
+) -> Config {
 
     // env vars (ชนะ config.json)
     let env_backend = env::var("BUFF_BACKEND").unwrap_or_default();
