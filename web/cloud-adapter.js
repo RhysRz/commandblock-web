@@ -192,7 +192,7 @@
       if (!selected) { report('เลือกเครื่องก่อน', true); return; } mode = nextMode; pinRow.hidden = true; pin.value = ''; report('กำลังสร้างการเชื่อมต่อ P2P…');
       try {
         const session = await currentSession(); peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-        channel = peer.createDataChannel('commandblock-remote', { ordered: true }); channel.binaryType = 'arraybuffer'; channel.onmessage = (event) => handleMessage(event.data); channel.onopen = () => report(nextMode === 'control' ? 'เชื่อมต่อแล้ว — ควบคุมได้' : 'เชื่อมต่อแล้ว — ดูหน้าจอได้'); channel.onclose = () => report('การเชื่อมต่อถูกปิด');
+        channel = peer.createDataChannel('commandblock-remote', { ordered: true, negotiated: true, id: 0 }); channel.binaryType = 'arraybuffer'; channel.onmessage = (event) => handleMessage(event.data); channel.onopen = () => report(nextMode === 'control' ? 'เชื่อมต่อแล้ว — ดูหน้าจอได้และควบคุมได้' : 'เชื่อมต่อแล้ว — ดูหน้าจอได้'); channel.onclose = () => report('การเชื่อมต่อถูกปิด');
         peer.onconnectionstatechange = () => { if (peer?.connectionState === 'failed') report('เครือข่ายนี้อาจบล็อก P2P — ลองเปลี่ยนเครือข่าย หรือใช้ TURN relay หากผู้ดูแลระบบตั้งค่าไว้', true); };
         const offer = await peer.createOffer(); await peer.setLocalDescription(offer); await waitForIceComplete(peer);
         const { data, error } = await client.from('remote_sessions').insert({ user_id: session.user.id, device_id: selected.id, mode: nextMode, offer: peer.localDescription }).select('id').single();

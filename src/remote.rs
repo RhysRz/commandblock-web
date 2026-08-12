@@ -21,7 +21,7 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
-use webrtc::data_channel::{DataChannel, DataChannelEvent};
+use webrtc::data_channel::{DataChannel, DataChannelEvent, RTCDataChannelInit};
 use webrtc::peer_connection::{
     register_default_interceptors, MediaEngine, PeerConnection, PeerConnectionBuilder,
     PeerConnectionEventHandler, RTCConfigurationBuilder, RTCIceGatheringState, RTCIceServer,
@@ -33,6 +33,8 @@ const SUPABASE_URL: &str = "https://qympivgklmstrnhfaywn.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY: &str = "sb_publishable_UJMuyL3QY8lMEWJKZi3zAQ_NFKZY8TH";
 const REMOTE_SESSION_TTL: u64 = 600;
 const FRAME_CHUNK_BYTES: usize = 12_000;
+const REMOTE_CHANNEL_LABEL: &str = "commandblock-remote";
+const REMOTE_CHANNEL_ID: u16 = 0;
 const REMOTE_CREDENTIAL_SERVICE: &str = "CommandBlock Remote PC";
 const REMOTE_CREDENTIAL_ACCOUNT: &str = "approval-secret";
 
@@ -449,6 +451,13 @@ fn remote_setting_engine() -> SettingEngine {
     SettingEngine::default()
 }
 
+fn remote_channel_init() -> RTCDataChannelInit {
+    RTCDataChannelInit {
+        negotiated: Some(REMOTE_CHANNEL_ID),
+        ..Default::default()
+    }
+}
+
 /// เก็บเฉพาะสรุป ICE เพื่อวินิจฉัยเครือข่าย โดยไม่บันทึก SDP, รหัสผ่าน หรือภาพหน้าจอ.
 fn ice_candidate_summary(sdp: &str) -> String {
     let candidates: Vec<&str> = sdp
@@ -456,10 +465,22 @@ fn ice_candidate_summary(sdp: &str) -> String {
         .filter(|line| line.trim_start().starts_with("a=candidate:"))
         .collect();
     let count = candidates.len();
-    let host = candidates.iter().filter(|line| line.contains(" typ host")).count();
-    let srflx = candidates.iter().filter(|line| line.contains(" typ srflx")).count();
-    let relay = candidates.iter().filter(|line| line.contains(" typ relay")).count();
-    let mdns = candidates.iter().filter(|line| line.contains(".local")).count();
+    let host = candidates
+        .iter()
+        .filter(|line| line.contains(" typ host"))
+        .count();
+    let srflx = candidates
+        .iter()
+        .filter(|line| line.contains(" typ srflx"))
+        .count();
+    let relay = candidates
+        .iter()
+        .filter(|line| line.contains(" typ relay"))
+        .count();
+    let mdns = candidates
+        .iter()
+        .filter(|line| line.contains(".local"))
+        .count();
     format!("candidates={count} host={host} srflx={srflx} relay={relay} mdns={mdns}")
 }
 
@@ -484,6 +505,7 @@ impl PeerConnectionEventHandler for RemoteHandler {
         }
     }
     async fn on_data_channel(&self, dc: Arc<dyn DataChannel>) {
+        write_remote_diagnostic("remote data channel received");
         let runtime = self.runtime.clone();
         let task_runtime = runtime.clone();
         let control = self.control;
@@ -537,6 +559,21 @@ async fn run_peer(
         .build()
         .await
         .map_err(|e| e.to_string())?;
+    // Create the same negotiated channel as the browser before the SCTP association opens.
+    // This avoids relying on an in-band OnDataChannel callback that can arrive too late on
+    // some browser/Windows combinations.
+    let data_channel = pc
+        .create_data_channel(REMOTE_CHANNEL_LABEL, Some(remote_channel_init()))
+        .await
+        .map_err(|e| format!("สร้างช่อง Remote PC ไม่สำเร็จ: {e}"))?;
+    let task_runtime = runtime.clone();
+    let task_done = done_tx.clone();
+    runtime.spawn(Box::pin(async move {
+        if let Err(error) = serve_data_channel(data_channel, control, task_done, task_runtime).await
+        {
+            write_remote_diagnostic(&format!("remote channel stopped: {error}"));
+        }
+    }));
     let offer: RTCSessionDescription = serde_json::from_value(offer.clone())
         .map_err(|_| "รูปแบบ WebRTC offer ไม่ถูกต้อง".to_string())?;
     pc.set_remote_description(offer)
@@ -554,7 +591,10 @@ async fn run_peer(
         .local_description()
         .await
         .ok_or_else(|| "สร้าง WebRTC answer ไม่สำเร็จ".to_string())?;
-    write_remote_diagnostic(&format!("created answer {}", ice_candidate_summary(&answer.sdp)));
+    write_remote_diagnostic(&format!(
+        "created answer {}",
+        ice_candidate_summary(&answer.sdp)
+    ));
     patch_session(
         &agent,
         &token,
@@ -574,6 +614,7 @@ async fn serve_data_channel(
     runtime: Arc<dyn Runtime>,
 ) -> Result<(), String> {
     let mut opened = false;
+    let mut sent_first_frame = false;
     let mut ticker = runtime.sleep(Duration::from_millis(100));
     let (frames, frame_rx) = mpsc::sync_channel::<(Vec<u8>, usize, usize)>(1);
     let keep_capturing = Arc::new(AtomicBool::new(true));
@@ -588,13 +629,29 @@ async fn serve_data_channel(
                     _ => {}
                 },
                 _ = ticker.as_mut().fuse() => {
-                    if let Ok((frame, width, height)) = frame_rx.try_recv() { send_frame(&dc, frame, width, height).await?; }
+                    if let Ok((frame, width, height)) = frame_rx.try_recv() {
+                        let bytes = frame.len();
+                        match send_frame(&dc, frame, width, height).await {
+                            Ok(()) if !sent_first_frame => {
+                                write_remote_diagnostic(&format!("first screen frame sent bytes={bytes} chunks={}", frame_chunk_count(bytes)));
+                                sent_first_frame = true;
+                            }
+                            Ok(()) => {}
+                            Err(error) => {
+                                write_remote_diagnostic(&format!("screen frame send failed: {error}"));
+                                return Err(error);
+                            }
+                        }
+                    }
                     ticker = runtime.sleep(Duration::from_millis(100));
                 }
             }
         } else {
             match dc.poll().await {
-                Some(DataChannelEvent::OnOpen) => opened = true,
+                Some(DataChannelEvent::OnOpen) => {
+                    write_remote_diagnostic("remote data channel opened");
+                    opened = true;
+                }
                 Some(DataChannelEvent::OnClose) | None => {
                     keep_capturing.store(false, Ordering::Relaxed);
                     return Ok(());
@@ -605,17 +662,35 @@ async fn serve_data_channel(
     }
 }
 fn capture_worker(tx: mpsc::SyncSender<(Vec<u8>, usize, usize)>, keep_capturing: Arc<AtomicBool>) {
-    let Ok((mut capturer, width, height)) = make_capture() else {
-        return;
+    let (mut capturer, width, height) = match make_capture() {
+        Ok(capturer) => capturer,
+        Err(error) => {
+            write_remote_diagnostic(&format!("screen capture unavailable: {error}"));
+            return;
+        }
     };
+    write_remote_diagnostic(&format!(
+        "screen capture started width={width} height={height}"
+    ));
+    let mut captured_first_frame = false;
     while keep_capturing.load(Ordering::Relaxed) {
         match capture_frame(&mut capturer, width, height) {
             Ok(Some(frame)) => {
+                if !captured_first_frame {
+                    write_remote_diagnostic(&format!(
+                        "first screen frame captured bytes={}",
+                        frame.len()
+                    ));
+                    captured_first_frame = true;
+                }
                 let _ = tx.try_send((frame, width, height));
                 thread::sleep(Duration::from_millis(500));
             }
             Ok(None) => thread::sleep(Duration::from_millis(20)),
-            Err(_) => break,
+            Err(error) => {
+                write_remote_diagnostic(&format!("screen capture failed: {error}"));
+                break;
+            }
         }
     }
 }
@@ -683,6 +758,11 @@ async fn send_frame(
     }
     Ok(())
 }
+
+fn frame_chunk_count(frame_bytes: usize) -> usize {
+    frame_bytes.div_ceil(FRAME_CHUNK_BYTES)
+}
+
 fn apply_input(bytes: &[u8]) -> Result<(), String> {
     let event: Value = serde_json::from_slice(bytes).map_err(|_| "คำสั่งควบคุมไม่ถูกต้อง".to_string())?;
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
@@ -776,12 +856,27 @@ mod tests {
     #[test]
     fn ice_summary_reports_candidate_kinds_without_sdp_contents() {
         let sdp = "v=0\r\na=candidate:1 1 udp 1 192.168.1.20 5000 typ host\r\na=candidate:2 1 udp 1 203.0.113.20 5001 typ srflx\r\na=candidate:3 1 udp 1 device.local 5002 typ host\r\n";
-        assert_eq!(super::ice_candidate_summary(sdp), "candidates=3 host=2 srflx=1 relay=0 mdns=1");
+        assert_eq!(
+            super::ice_candidate_summary(sdp),
+            "candidates=3 host=2 srflx=1 relay=0 mdns=1"
+        );
     }
 
     #[test]
     fn remote_setting_engine_queries_mdns_candidates_from_mobile_browsers() {
         let engine = super::remote_setting_engine();
         assert_eq!(format!("{:?}", engine.multicast_dns().mode), "QueryOnly");
+    }
+
+    #[test]
+    fn frame_chunk_count_covers_a_partial_final_chunk() {
+        assert_eq!(super::frame_chunk_count(24_001), 3);
+    }
+
+    #[test]
+    fn remote_channel_is_negotiated_out_of_band_on_stream_zero() {
+        let init = super::remote_channel_init();
+        assert!(init.ordered);
+        assert_eq!(init.negotiated, Some(0));
     }
 }
