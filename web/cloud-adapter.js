@@ -85,7 +85,10 @@
       if (!response.ok || data.error) throw new Error(data.error || 'Cloud chat ไม่สำเร็จ');
       const content = String(data.content || '');
       await saveMessage(session, 'assistant', content);
-      return sse([event('content', { t: content })]);
+      const usage = data.usage && typeof data.usage === 'object' ? data.usage : {
+        prompt_tokens: Math.ceil(message.length / 4), completion_tokens: Math.ceil(content.length / 4), total_tokens: Math.ceil((message.length + content.length) / 4), exact: false,
+      };
+      return sse([event('content', { t: content }), event('usage', usage)]);
     } catch (error) {
       return sse([event('note', { t: error.message || 'ไม่สามารถเชื่อมต่อ Cloud chat ได้' })], 400);
     }
@@ -237,6 +240,43 @@
     return originalFetch(input, init);
   };
 
+  function mountDevices() {
+    if (document.querySelector('#cb-devices-open')) return;
+    const open = document.createElement('button');
+    open.id = 'cb-devices-open'; open.className = 'pill'; open.type = 'button'; open.textContent = '🖥 My devices';
+    document.querySelector('.statusbar')?.appendChild(open);
+    const modal = document.createElement('section');
+    modal.className = 'cb-remote-modal'; modal.hidden = true;
+    modal.innerHTML = '<div class="cb-remote-card" role="dialog" aria-modal="true" aria-label="My devices"><div class="cb-remote-row"><div><h2>My devices</h2><p>จัดการเฉพาะเครื่องในบัญชีนี้</p></div><button id="cb-devices-close">ปิด</button></div><div id="cb-devices-list"></div><p class="cb-remote-note" id="cb-devices-status"></p></div>';
+    document.body.appendChild(modal);
+    const list = modal.querySelector('#cb-devices-list'); const status = modal.querySelector('#cb-devices-status');
+    async function audit(session, device, kind, action) {
+      await client.from('device_audit_events').insert({ user_id: session.user.id, device_kind: kind, device_id: device.id, action });
+    }
+    async function refresh() {
+      const session = await currentSession(); status.textContent = 'กำลังโหลด…'; list.replaceChildren();
+      const [connectors, remotes, events] = await Promise.all([
+        client.from('connector_devices').select('id,name,last_seen_at').eq('user_id', session.user.id).order('last_seen_at', { ascending: false }),
+        client.from('remote_devices').select('id,name,last_seen_at').eq('user_id', session.user.id).order('last_seen_at', { ascending: false }),
+        client.from('device_audit_events').select('device_kind,device_id,action,mode,created_at').eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(20),
+      ]);
+      const rows = [...(connectors.data || []).map((item) => ({...item, kind:'connector'})), ...(remotes.data || []).map((item) => ({...item, kind:'remote'}))];
+      for (const item of rows) {
+        const row = document.createElement('div'); row.className = 'cb-remote-device';
+        const label = document.createElement('span'); label.textContent = (item.kind === 'remote' ? '🖥 Remote' : '🔗 Connector') + ' · ' + item.name + ' · ' + new Date(item.last_seen_at).toLocaleString();
+        const rename = document.createElement('button'); rename.id = 'cb-device-rename'; rename.textContent = 'เปลี่ยนชื่อ';
+        const revoke = document.createElement('button'); revoke.id = 'cb-device-revoke'; revoke.textContent = 'ตัดสิทธิ์';
+        rename.onclick = async () => { const name = window.prompt('ชื่อเครื่อง', item.name)?.trim(); if (!name || name.length > 80) return; const table = item.kind === 'remote' ? 'remote_devices' : 'connector_devices'; const { error } = await client.from(table).update({ name }).eq('id', item.id).eq('user_id', session.user.id); if (error) { status.textContent = error.message; return; } await audit(session, item, item.kind, 'renamed'); refresh(); };
+        revoke.onclick = async () => { if (!window.confirm('ตัดสิทธิ์ ' + item.name + ' ? ต้องเปิด Connector/Remote ใหม่เพื่อลงทะเบียนอีกครั้ง')) return; const table = item.kind === 'remote' ? 'remote_devices' : 'connector_devices'; if (item.kind === 'remote') await client.from('remote_sessions').update({ status:'closed' }).eq('device_id', item.id).eq('user_id', session.user.id); const { error } = await client.from(table).delete().eq('id', item.id).eq('user_id', session.user.id); if (error) { status.textContent = error.message; return; } await audit(session, item, item.kind, 'revoked').catch(() => {}); refresh(); };
+        row.append(label, rename, revoke); list.appendChild(row);
+      }
+      const history = document.createElement('p'); history.className = 'cb-remote-note'; history.textContent = 'ประวัติล่าสุด: ' + (events.data || []).map((event) => event.action + ' · ' + new Date(event.created_at).toLocaleString()).join(' | ');
+      list.appendChild(history); status.textContent = rows.length ? '' : 'ยังไม่พบอุปกรณ์ในบัญชีนี้';
+    }
+    open.onclick = async () => { modal.hidden = false; try { await refresh(); } catch (error) { status.textContent = error.message || 'โหลดอุปกรณ์ไม่ได้'; } };
+    modal.querySelector('#cb-devices-close').onclick = () => { modal.hidden = true; };
+  }
+
   function mountAuthGate() {
     const style = document.createElement('style');
     style.textContent = `#cb-cloud-gate{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#251044 0,#0d0918 58%,#07060d 100%);color:#f5efff;font-family:"Segoe UI","Noto Sans Thai",sans-serif}#cb-cloud-gate[hidden]{display:none}.cb-cloud-card{width:min(440px,100%);padding:32px;border:1px solid rgba(184,137,255,.35);border-radius:24px;background:rgba(23,14,43,.84);box-shadow:0 28px 80px rgba(0,0,0,.48);backdrop-filter:blur(18px)}.cb-cloud-card h1{margin:0 0 10px;font-size:28px}.cb-cloud-card p{color:#cdbfe8;line-height:1.6}.cb-cloud-card input{width:100%;margin-top:10px;padding:13px 14px;border:1px solid #5b3e84;border-radius:12px;background:#100a20;color:#fff;font:inherit}.cb-cloud-actions{display:grid;gap:10px;margin-top:18px}.cb-cloud-actions button{padding:12px;border:1px solid #7344ba;border-radius:12px;background:#271343;color:#fff;font:inherit;font-weight:700;cursor:pointer}.cb-cloud-actions button.primary{border:0;background:linear-gradient(135deg,#7034df,#a65cff)}.cb-cloud-status{min-height:24px;margin-top:14px;color:#bfeadf;font-size:13px}.cb-cloud-link{background:none!important;border:0!important;color:#c69aff!important;text-decoration:underline;font-weight:400!important}`;
@@ -252,7 +292,7 @@
     const name = gate.querySelector('#cb-cloud-name');
     const report = (message, error = false) => { status.textContent = message; status.style.color = error ? '#ffc2d8' : '#bfeadf'; };
     const errorText = (error) => error?.message === 'Invalid login credentials' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : (error?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
-    const openApp = () => { gate.hidden = true; document.documentElement.classList.remove('cb-auth-pending'); mountRemotePC(); };
+    const openApp = () => { gate.hidden = true; document.documentElement.classList.remove('cb-auth-pending'); mountRemotePC(); mountDevices(); };
     const logout = document.createElement('button');
     logout.id = 'cb-cloud-logout';
     logout.className = 'pill';

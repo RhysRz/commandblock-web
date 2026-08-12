@@ -58,6 +58,39 @@ pub struct Config {
     pub models: Vec<ModelEntry>,
 }
 
+pub fn fallback_models(active: &Effective, models: &[ModelEntry]) -> Vec<Effective> {
+    models
+        .iter()
+        .filter(|model| !model.name.is_empty() && (model.name != active.model || model.base_url != active.base_url))
+        .filter_map(|model| {
+            let base_url = if model.base_url.is_empty() { active.base_url.clone() } else { clean_url(model.base_url.clone()) };
+            if base_url.is_empty() { return None; }
+            Some(Effective {
+                backend: Backend::OpenAI,
+                base_url,
+                api_key: if model.api_key.is_empty() { active.api_key.clone() } else { model.api_key.clone() },
+                model: model.name.clone(),
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    use super::*;
+    #[test]
+    fn fallback_models_exclude_the_active_model() {
+        let active = Effective { backend: Backend::OpenAI, base_url: "https://api.deepseek.com".into(), api_key: "key".into(), model: "deepseek-v4-flash".into() };
+        let models = vec![
+            ModelEntry { name: "deepseek-v4-flash".into(), base_url: active.base_url.clone(), api_key: String::new() },
+            ModelEntry { name: "llama-3.3-70b-versatile".into(), base_url: "https://api.groq.com/openai/v1".into(), api_key: "fallback".into() },
+        ];
+        let fallbacks = fallback_models(&active, &models);
+        assert_eq!(fallbacks.len(), 1);
+        assert_eq!(fallbacks[0].model, "llama-3.3-70b-versatile");
+    }
+}
+
 fn get_str(v: &serde_json::Value, key: &str) -> String {
     v.get(key)
         .and_then(|x| x.as_str())

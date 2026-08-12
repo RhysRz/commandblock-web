@@ -114,21 +114,25 @@ pub fn status_json() -> Value {
 }
 
 pub fn apply_staged_update() -> bool {
+    launch_staged_update().is_ok()
+}
+
+pub fn launch_staged_update() -> Result<(), String> {
     let Ok(current) = std::env::current_exe() else {
-        return false;
+        return Err("ไม่พบตำแหน่ง CommandBlock".to_string());
     };
     let Some(base) = current.parent() else {
-        return false;
+        return Err("ไม่พบโฟลเดอร์ CommandBlock".to_string());
     };
     let stage = updates_dir().join("pending");
     if !stage.join("Commandblock.exe").is_file()
         || !stage.join("commandblock-connector.exe").is_file()
     {
-        return false;
+        return Err("ยังไม่มีไฟล์อัปเดตที่ตรวจสอบแล้ว".to_string());
     }
     let helper = base.join("commandblock-updater.exe");
     if !helper.is_file() {
-        return false;
+        return Err("ไม่พบ commandblock-updater.exe".to_string());
     }
     std::process::Command::new(helper)
         .arg("--apply")
@@ -136,7 +140,8 @@ pub fn apply_staged_update() -> bool {
         .arg(base)
         .arg(std::process::id().to_string())
         .spawn()
-        .is_ok()
+        .map_err(|error| format!("เริ่มติดตั้งอัปเดตไม่ได้: {error}"))?;
+    Ok(())
 }
 
 fn latest_release() -> Result<Option<Release>, String> {

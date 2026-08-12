@@ -9,8 +9,10 @@ test('desktop UI exposes a downloadable update notice with visible progress', ()
 
   assert.match(ui, /id="updateNotice"/);
   assert.match(ui, /id="updateDownload"/);
+  assert.match(ui, /id="updateInstall"/);
   assert.match(ui, /id="updateProgress"/);
   assert.match(ui, /\/api\/update/);
   assert.match(gui, /\("GET", "\/api\/update"\)/);
   assert.match(gui, /\("POST", "\/api\/update"\)/);
+  assert.match(gui, /"install" => update::launch_staged_update/);
 });

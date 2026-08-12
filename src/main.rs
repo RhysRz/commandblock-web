@@ -34,6 +34,8 @@ pub trait TurnSink {
     fn note(&mut self, msg: &str);
     /// ผลลัพธ์เครื่องมือ (CLI แสดงขนาด, GUI ข้าม)
     fn result(&mut self, text: &str);
+    /// จำนวน token ของคำขอล่าสุด (จริงจาก provider หรือค่าประมาณ)
+    fn usage(&mut self, _usage: llm::TokenUsage) {}
     /// จบเทิร์นของ LLM (CLI: ขึ้นบรรทัดใหม่ถ้ามีเนื้อหา)
     fn end_line(&mut self);
 }
@@ -201,7 +203,7 @@ fn main() {
         println!("คุณ: {q}\n");
         history.push(json!({"role": "user", "content": q}));
         let mut sink = CliSink { header: false };
-        run_turn(&agent, &eff, &mut history, &mut plan, &mut sink);
+        run_turn(&agent, &eff, &cfg.models, &mut history, &mut plan, &mut sink);
         save_session(&history);
         // ถ้า Commandblock เปิดพรีวิวเว็บไว้ ให้ค้างโปรแกรมเพื่อให้เซิร์ฟเวอร์รันต่อ (กด Enter/Ctrl+C เพื่อปิด)
         if let Some(u) = tools::last_preview_url() {
@@ -279,7 +281,7 @@ fn main() {
 
         history.push(json!({"role": "user", "content": input}));
         let mut sink = CliSink { header: false };
-        run_turn(&agent, &eff, &mut history, &mut plan, &mut sink);
+        run_turn(&agent, &eff, &cfg.models, &mut history, &mut plan, &mut sink);
         save_session(&history);
     }
 
@@ -357,6 +359,7 @@ fn append_skipped_tool_results(history: &mut Vec<Value>, calls: &[llm::ToolCall]
 pub fn run_turn(
     agent: &ureq::Agent,
     eff: &config::Effective,
+    configured_models: &[config::ModelEntry],
     history: &mut Vec<Value>,
     plan: &mut Option<String>,
     sink: &mut dyn TurnSink,
@@ -391,47 +394,45 @@ pub fn run_turn(
             Vec::new()
         };
 
-        let sink_rc = std::rc::Rc::new(std::cell::RefCell::new(&mut *sink));
-        let mut content_out = {
-            let s = std::rc::Rc::clone(&sink_rc);
-            move |c: &str| s.borrow_mut().content(c)
-        };
-        let mut think_out = {
-            let s = std::rc::Rc::clone(&sink_rc);
-            move |t: &str| s.borrow_mut().think(t)
-        };
-        let resp = match llm::chat_stream(
-            agent,
-            eff,
-            history,
-            &schemas,
-            &mut content_out,
-            &mut think_out,
-        ) {
+        let resp = match stream_response(agent, eff, history, &schemas, sink) {
             Ok(r) => r,
             Err(e) => {
                 // ถ้า error เกี่ยวกับ tools (บาง endpoint ไม่รองรับ) ลองใหม่แบบไม่มี tools
                 if e.to_lowercase().contains("tools") {
-                    let sink_rc2 = std::rc::Rc::new(std::cell::RefCell::new(&mut *sink));
-                    let mut content_out2 = {
-                        let s = std::rc::Rc::clone(&sink_rc2);
-                        move |c: &str| s.borrow_mut().content(c)
-                    };
-                    let mut think_out2 = {
-                        let s = std::rc::Rc::clone(&sink_rc2);
-                        move |t: &str| s.borrow_mut().think(t)
-                    };
-                    match llm::chat_stream(
-                        agent,
-                        eff,
-                        history,
-                        &[],
-                        &mut content_out2,
-                        &mut think_out2,
-                    ) {
+                    match stream_response(agent, eff, history, &[], sink) {
                         Ok(r) => r,
                         Err(e2) => {
                             sink.note(&e2);
+                            sink.end_line();
+                            return;
+                        }
+                    }
+                } else if llm::should_try_fallback(&e) {
+                    let mut recovered = None;
+                    for fallback in config::fallback_models(eff, configured_models) {
+                        sink.note(&format!(
+                            "[CommandBlock] โมเดล {} ใช้งานไม่ได้ — กำลังลอง fallback model: {}",
+                            eff.model, fallback.model
+                        ));
+                        match stream_response(agent, &fallback, history, &schemas, sink) {
+                            Ok(response) => {
+                                sink.note(&format!(
+                                    "[CommandBlock] ใช้ fallback model: {}",
+                                    fallback.model
+                                ));
+                                recovered = Some(response);
+                                break;
+                            }
+                            Err(fallback_error) => sink.note(&format!(
+                                "[CommandBlock] fallback {} ใช้ไม่ได้: {}",
+                                fallback.model, fallback_error
+                            )),
+                        }
+                    }
+                    match recovered {
+                        Some(response) => response,
+                        None => {
+                            sink.note(&e);
                             sink.end_line();
                             return;
                         }
@@ -444,6 +445,10 @@ pub fn run_turn(
             }
         };
         sink.end_line();
+        sink.usage(
+            resp.usage
+                .unwrap_or_else(|| llm::estimate_usage(history, &resp.content)),
+        );
 
         // เก็บข้อความ assistant (ต้องมี tool_calls เดิมถ้ามี)
         let mut msg = json!({"role": "assistant", "content": resp.content.clone()});
@@ -550,6 +555,25 @@ pub fn run_turn(
             trim_history(history);
         }
     }
+}
+
+fn stream_response(
+    agent: &ureq::Agent,
+    eff: &config::Effective,
+    history: &[Value],
+    schemas: &[Value],
+    sink: &mut dyn TurnSink,
+) -> Result<llm::StreamedResult, String> {
+    let sink_rc = std::rc::Rc::new(std::cell::RefCell::new(sink));
+    let mut content_out = {
+        let output = std::rc::Rc::clone(&sink_rc);
+        move |chunk: &str| output.borrow_mut().content(chunk)
+    };
+    let mut think_out = {
+        let output = std::rc::Rc::clone(&sink_rc);
+        move |chunk: &str| output.borrow_mut().think(chunk)
+    };
+    llm::chat_stream(agent, eff, history, schemas, &mut content_out, &mut think_out)
 }
 
 fn final_summary(
