@@ -29,7 +29,7 @@ jobs:
       - env: { GH_TOKEN: '${{ github.token }}' }
         shell: pwsh
         run: |
-          $buildId = (& .\target\release\commandblock.exe --build-id).Trim()
+          $buildId = (git log -1 --format=%H -- src assets Cargo.toml Cargo.lock build.rs).Trim()
           if ([string]::IsNullOrWhiteSpace($buildId)) { throw "Unable to determine CommandBlock runtime build ID" }
           $tag = "build-$buildId"
           gh release view $tag *> $null

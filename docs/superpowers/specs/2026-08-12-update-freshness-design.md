@@ -11,7 +11,7 @@ Each desktop build exposes two immutable values:
 - `COMMAND_BLOCK_BUILD_ID`: the latest Git revision that changed runtime inputs.
 - `COMMAND_BLOCK_BUILD_TIMESTAMP`: the UTC build time.
 
-The updater accepts a release only when both conditions hold: its `build-<id>` tag differs from the installed runtime ID and its GitHub `published_at` timestamp is later than the installed build timestamp. The release workflow reads the ID from the compiled executable, so installer-only commits reuse the runtime ID and do not create a second runtime release.
+The updater accepts a release only when both conditions hold: its `build-<id>` tag differs from the installed runtime ID and its GitHub `published_at` timestamp is later than the installed build timestamp. The release workflow uses the same Git selector as `build.rs`, so installer-only commits reuse the runtime ID and do not create a second runtime release.
 
 ## Error Handling
 
