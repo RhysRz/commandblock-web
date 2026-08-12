@@ -828,6 +828,7 @@
       <span class="update-copy" id="updateText"></span>
       <span class="update-progress" id="updateProgress" hidden><i></i></span>
       <button id="updateDownload" hidden>ดาวน์โหลด</button>
+      <button id="updateInstall" hidden>ติดตั้งและเปิดใหม่</button>
     </div>
     <input type="file" id="fileInput" multiple hidden>
     <div class="statusbar">
@@ -1004,6 +1005,7 @@ const updateText = document.getElementById("updateText");
 const updateProgress = document.getElementById("updateProgress");
 const updateProgressFill = updateProgress.querySelector("i");
 const updateDownload = document.getElementById("updateDownload");
+const updateInstall = document.getElementById("updateInstall");
 function updateSize(bytes){
   if (!Number.isFinite(bytes) || bytes < 0) return "";
   if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
@@ -1014,6 +1016,7 @@ function renderUpdate(s){
   updateNotice.hidden = !active;
   if (!active) return;
   updateDownload.hidden = s.state !== "available";
+  updateInstall.hidden = s.state !== "ready";
   updateDownload.disabled = s.state === "downloading";
   updateProgress.hidden = s.state !== "downloading";
   updateProgress.classList.toggle("indeterminate", s.state === "downloading" && !Number.isFinite(s.percent));
@@ -1023,7 +1026,7 @@ function renderUpdate(s){
     updateText.textContent = "กำลังดาวน์โหลดอัปเดต" + (Number.isFinite(s.percent) ? " " + s.percent + "%" : "") + detail;
     updateProgressFill.style.width = Number.isFinite(s.percent) ? s.percent + "%" : "";
   }
-  if (s.state === "ready") updateText.textContent = "ดาวน์โหลดอัปเดตแล้ว — ปิดแล้วเปิด CommandBlock ใหม่เพื่อติดตั้ง";
+  if (s.state === "ready") updateText.textContent = "ดาวน์โหลดอัปเดตแล้ว — ติดตั้งได้ทันที";
   if (s.state === "error") updateText.textContent = "อัปเดตไม่สำเร็จ: " + (s.message || "ไม่ทราบสาเหตุ");
 }
 async function refreshUpdate(){
@@ -1035,6 +1038,15 @@ updateDownload.addEventListener("click", async () => {
     const response = await fetch("/api/update", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action:"download"}) });
     renderUpdate(await response.json());
   } catch (_) { renderUpdate({state:"error", message:"เชื่อมต่อระบบอัปเดตไม่ได้"}); }
+});
+updateInstall.addEventListener("click", async () => {
+  updateInstall.disabled = true;
+  try {
+    const response = await fetch("/api/update", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action:"install"}) });
+    const state = await response.json();
+    updateText.textContent = state.error || "กำลังติดตั้งและเปิด CommandBlock ใหม่…";
+    if (!state.error) setTimeout(() => window.close(), 250);
+  } catch (_) { updateText.textContent = "เริ่มติดตั้งอัปเดตไม่ได้ — ปิดและเปิด CommandBlock ใหม่อีกครั้ง"; }
 });
 refreshUpdate();
 setInterval(refreshUpdate, 1200);

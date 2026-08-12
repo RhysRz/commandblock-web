@@ -729,10 +729,12 @@ fn handle(
                         .map(str::to_owned)
                 })
                 .unwrap_or_default();
-            let result = if action == "download" {
-                update::download_available_release_async().map(|_| update::status_json())
-            } else {
-                Err("ไม่รู้จักคำสั่งอัปเดต".to_string())
+            let result = match action.as_str() {
+                "download" => {
+                    update::download_available_release_async().map(|_| update::status_json())
+                }
+                "install" => update::launch_staged_update().map(|_| json!({"state": "installing"})),
+                _ => Err("ไม่รู้จักคำสั่งอัปเดต".to_string()),
             };
             match result {
                 Ok(state) => respond(
