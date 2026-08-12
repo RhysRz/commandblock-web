@@ -25,7 +25,7 @@ use webrtc::data_channel::{DataChannel, DataChannelEvent};
 use webrtc::peer_connection::{
     register_default_interceptors, MediaEngine, PeerConnection, PeerConnectionBuilder,
     PeerConnectionEventHandler, RTCConfigurationBuilder, RTCIceGatheringState, RTCIceServer,
-    RTCPeerConnectionState, RTCSessionDescription, Registry,
+    RTCPeerConnectionState, RTCSessionDescription, Registry, SettingEngine,
 };
 use webrtc::runtime::{channel, default_runtime, Runtime, Sender};
 
@@ -443,6 +443,12 @@ fn remote_udp_bind_addrs() -> Vec<std::net::SocketAddr> {
     vec![std::net::SocketAddr::from(([0, 0, 0, 0], 0))]
 }
 
+/// Safari และ Chrome ซ่อน IP ใน LAN เป็น candidate `.local`; SettingEngine ค่าเริ่มต้น
+/// จะแก้ชื่อ mDNS เหล่านี้โดยไม่เผยแพร่ชื่อ mDNS ของเครื่อง Windows กลับไป.
+fn remote_setting_engine() -> SettingEngine {
+    SettingEngine::default()
+}
+
 /// เก็บเฉพาะสรุป ICE เพื่อวินิจฉัยเครือข่าย โดยไม่บันทึก SDP, รหัสผ่าน หรือภาพหน้าจอ.
 fn ice_candidate_summary(sdp: &str) -> String {
     let candidates: Vec<&str> = sdp
@@ -519,6 +525,7 @@ async fn run_peer(
         )
         .with_media_engine(media)
         .with_interceptor_registry(registry)
+        .with_setting_engine(remote_setting_engine())
         .with_handler(Arc::new(RemoteHandler {
             runtime: runtime.clone(),
             control,
@@ -770,5 +777,11 @@ mod tests {
     fn ice_summary_reports_candidate_kinds_without_sdp_contents() {
         let sdp = "v=0\r\na=candidate:1 1 udp 1 192.168.1.20 5000 typ host\r\na=candidate:2 1 udp 1 203.0.113.20 5001 typ srflx\r\na=candidate:3 1 udp 1 device.local 5002 typ host\r\n";
         assert_eq!(super::ice_candidate_summary(sdp), "candidates=3 host=2 srflx=1 relay=0 mdns=1");
+    }
+
+    #[test]
+    fn remote_setting_engine_queries_mdns_candidates_from_mobile_browsers() {
+        let engine = super::remote_setting_engine();
+        assert_eq!(format!("{:?}", engine.multicast_dns().mode), "QueryOnly");
     }
 }
