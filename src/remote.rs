@@ -11,6 +11,7 @@ use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use scrap::{Capturer, Display};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::fs::OpenOptions;
 use std::io::{self, ErrorKind, Write};
 use std::process::Command;
 use std::sync::{
@@ -442,6 +443,27 @@ fn remote_udp_bind_addrs() -> Vec<std::net::SocketAddr> {
     vec![std::net::SocketAddr::from(([0, 0, 0, 0], 0))]
 }
 
+/// เก็บเฉพาะสรุป ICE เพื่อวินิจฉัยเครือข่าย โดยไม่บันทึก SDP, รหัสผ่าน หรือภาพหน้าจอ.
+fn ice_candidate_summary(sdp: &str) -> String {
+    let candidates: Vec<&str> = sdp
+        .lines()
+        .filter(|line| line.trim_start().starts_with("a=candidate:"))
+        .collect();
+    let count = candidates.len();
+    let host = candidates.iter().filter(|line| line.contains(" typ host")).count();
+    let srflx = candidates.iter().filter(|line| line.contains(" typ srflx")).count();
+    let relay = candidates.iter().filter(|line| line.contains(" typ relay")).count();
+    let mdns = candidates.iter().filter(|line| line.contains(".local")).count();
+    format!("candidates={count} host={host} srflx={srflx} relay={relay} mdns={mdns}")
+}
+
+fn write_remote_diagnostic(message: &str) {
+    let path = std::env::temp_dir().join("CommandBlock-remote.log");
+    if let Ok(mut log) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(log, "{} {message}", OffsetDateTime::now_utc());
+    }
+}
+
 #[async_trait::async_trait]
 impl PeerConnectionEventHandler for RemoteHandler {
     async fn on_ice_gathering_state_change(&self, state: RTCIceGatheringState) {
@@ -450,6 +472,7 @@ impl PeerConnectionEventHandler for RemoteHandler {
         }
     }
     async fn on_connection_state_change(&self, state: RTCPeerConnectionState) {
+        write_remote_diagnostic(&format!("peer connection state={state:?}"));
         if state == RTCPeerConnectionState::Failed || state == RTCPeerConnectionState::Closed {
             let _ = self.done.try_send(());
         }
@@ -472,6 +495,12 @@ async fn run_peer(
     token: String,
     id: String,
 ) -> Result<(), String> {
+    let offer_summary = offer
+        .get("sdp")
+        .and_then(Value::as_str)
+        .map(ice_candidate_summary)
+        .unwrap_or_else(|| "missing SDP".to_string());
+    write_remote_diagnostic(&format!("received offer {offer_summary}"));
     let runtime = default_runtime().ok_or_else(|| "ไม่พบ runtime สำหรับ WebRTC".to_string())?;
     let (done_tx, mut done_rx) = channel::<()>(1);
     let (ice_tx, mut ice_rx) = channel::<()>(1);
@@ -518,6 +547,7 @@ async fn run_peer(
         .local_description()
         .await
         .ok_or_else(|| "สร้าง WebRTC answer ไม่สำเร็จ".to_string())?;
+    write_remote_diagnostic(&format!("created answer {}", ice_candidate_summary(&answer.sdp)));
     patch_session(
         &agent,
         &token,
@@ -734,5 +764,11 @@ mod tests {
     #[test]
     fn remote_peer_runs_inside_the_webrtc_runtime() {
         assert_eq!(super::block_on_webrtc(async { 6 * 7 }), 42);
+    }
+
+    #[test]
+    fn ice_summary_reports_candidate_kinds_without_sdp_contents() {
+        let sdp = "v=0\r\na=candidate:1 1 udp 1 192.168.1.20 5000 typ host\r\na=candidate:2 1 udp 1 203.0.113.20 5001 typ srflx\r\na=candidate:3 1 udp 1 device.local 5002 typ host\r\n";
+        assert_eq!(super::ice_candidate_summary(sdp), "candidates=3 host=2 srflx=1 relay=0 mdns=1");
     }
 }
