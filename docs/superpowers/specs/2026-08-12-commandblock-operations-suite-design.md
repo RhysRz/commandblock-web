@@ -13,6 +13,7 @@ This work is deliberately divided into three independently releasable units. The
 - The existing update banner gains an **Install and restart** action after a verified package is staged. The app launches the existing updater helper, exits cleanly, and the helper replaces only `Commandblock.exe` and `commandblock-connector.exe`.
 - Desktop Connector runs as a user-level background process after an explicit opt-in. A Windows system-tray menu shows online/offline state and provides: Open CommandBlock, Connect Desktop, Start Remote PC, Stop, and Exit. It does not run elevated and does not create a Windows service.
 - A first-run settings toggle controls whether it starts with Windows. Disabling the toggle removes only the user’s autostart entry.
+- A successful interactive Connector login stores only the Supabase refresh token in Windows Credential Manager. Autostart exchanges that token for an access token; it never stores the password. Explicit Connector logout deletes the credential and the autostart entry.
 
 ### B. Cloud model reliability and cost transparency
 
