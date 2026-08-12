@@ -28,9 +28,9 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Name: "ollamasignin"; Description: "เข้าสู่ระบบ Ollama (สำหรับโมเดล Cloud — ข้ามได้)"; GroupDescription: "Ollama Cloud:"; Flags: unchecked
 
 [Files]
-Source: "..\Commandblock.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\commandblock-connector.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\commandblock-updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\target\release\commandblock.exe"; DestDir: "{app}"; DestName: "Commandblock.exe"; Flags: ignoreversion
+Source: "..\target\release\commandblock-connector.exe"; DestDir: "{app}"; DestName: "commandblock-connector.exe"; Flags: ignoreversion
+Source: "..\target\release\commandblock-updater.exe"; DestDir: "{app}"; DestName: "commandblock-updater.exe"; Flags: ignoreversion
 Source: "..\docs\SETUP-GUIDE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "config-template.json"; DestDir: "{userappdata}\Commandblock"; DestName: "config.json"; Flags: onlyifdoesntexist ignoreversion
 Source: "payload\ollama\OllamaSetup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall ignoreversion
