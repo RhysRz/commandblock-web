@@ -10,6 +10,7 @@ use image::{DynamicImage, ImageBuffer, Rgba};
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use scrap::{Capturer, Display};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::io::{self, ErrorKind, Write};
 use std::process::Command;
 use std::sync::{
@@ -31,6 +32,8 @@ const SUPABASE_URL: &str = "https://qympivgklmstrnhfaywn.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY: &str = "sb_publishable_UJMuyL3QY8lMEWJKZi3zAQ_NFKZY8TH";
 const REMOTE_SESSION_TTL: u64 = 600;
 const FRAME_CHUNK_BYTES: usize = 12_000;
+const REMOTE_CREDENTIAL_SERVICE: &str = "CommandBlock Remote PC";
+const REMOTE_CREDENTIAL_ACCOUNT: &str = "approval-secret";
 
 struct Session {
     token: String,
@@ -171,6 +174,120 @@ fn patch_session(agent: &ureq::Agent, token: &str, id: &str, value: Value) -> Re
     Ok(())
 }
 
+/// รหัสลับนี้อยู่เฉพาะ Windows Credential Manager ของเครื่องปลายทางเท่านั้น
+/// เซิร์ฟเวอร์ได้รับเพียง hash ของรหัส 6 หลักในแต่ละ session
+fn device_approval_secret() -> Result<String, String> {
+    let entry = keyring::Entry::new(REMOTE_CREDENTIAL_SERVICE, REMOTE_CREDENTIAL_ACCOUNT)
+        .map_err(|error| format!("เปิด Windows Credential Manager ไม่สำเร็จ: {error}"))?;
+    match entry.get_password() {
+        Ok(secret) if !secret.trim().is_empty() => Ok(secret),
+        Ok(_) | Err(keyring::Error::NoEntry) => {
+            let seed = format!(
+                "{}:{}:{:?}",
+                std::env::var("COMPUTERNAME").unwrap_or_default(),
+                OffsetDateTime::now_utc().unix_timestamp_nanos(),
+                std::process::id()
+            );
+            let secret = sha256_hex(&seed);
+            entry
+                .set_password(&secret)
+                .map_err(|error| format!("บันทึกรหัส Remote PC ไม่สำเร็จ: {error}"))?;
+            Ok(secret)
+        }
+        Err(error) => Err(format!("อ่านรหัส Remote PC ไม่สำเร็จ: {error}")),
+    }
+}
+
+fn sha256_hex(value: &str) -> String {
+    format!("{:x}", Sha256::digest(value.as_bytes()))
+}
+
+fn approval_code(secret: &str, session_id: &str) -> String {
+    let stamp = OffsetDateTime::now_utc().unix_timestamp_nanos();
+    let hash = sha256_hex(&format!("{secret}:{session_id}:{stamp}"));
+    let number = u32::from_str_radix(&hash[..8], 16).unwrap_or(0) % 1_000_000;
+    format!("{number:06}")
+}
+
+fn approval_hash(secret: &str, code: &str) -> String {
+    sha256_hex(&format!("{secret}:{code}"))
+}
+
+fn audit_event(
+    agent: &ureq::Agent,
+    session: &Session,
+    device_id: &str,
+    remote_session_id: &str,
+    action: &str,
+    mode: &str,
+) {
+    let _ = auth(
+        agent.post(&format!("{SUPABASE_URL}/rest/v1/device_audit_events")),
+        &session.token,
+    )
+    .send_json(json!({
+        "user_id": session.user_id,
+        "device_kind": "remote",
+        "device_id": device_id,
+        "remote_session_id": remote_session_id,
+        "action": action,
+        "mode": mode,
+    }));
+}
+
+fn wait_for_approval(
+    agent: &ureq::Agent,
+    token: &str,
+    id: &str,
+    secret: &str,
+    expected_hash: &str,
+) -> Result<bool, String> {
+    let mut attempts = 0_u8;
+    let mut previous_input = String::new();
+    for _ in 0..120 {
+        thread::sleep(Duration::from_secs(1));
+        let rows: Vec<Value> = auth(
+            agent.get(&format!(
+                "{SUPABASE_URL}/rest/v1/remote_sessions?id=eq.{id}&select=status,approval_code_input"
+            )),
+            token,
+        )
+        .call()
+        .map_err(|_| "ตรวจรหัสยืนยัน Remote PC ไม่สำเร็จ".to_string())?
+        .into_json()
+        .map_err(|_| "อ่านรหัสยืนยัน Remote PC ไม่สำเร็จ".to_string())?;
+        let row = match rows.first() {
+            Some(row) => row,
+            None => return Ok(false),
+        };
+        if row.get("status").and_then(Value::as_str) != Some("requested") {
+            return Ok(false);
+        }
+        let input = row
+            .get("approval_code_input")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if input.len() == 6 && input != previous_input {
+            previous_input = input.to_string();
+            if approval_hash(secret, input) == expected_hash {
+                return Ok(true);
+            }
+            attempts += 1;
+            let _ = patch_session(
+                agent,
+                token,
+                id,
+                json!({"approval_attempts":attempts,"approval_code_input":null}),
+            );
+            if attempts >= 5 {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn serve_requested_session(
     agent: &ureq::Agent,
     session: &Session,
@@ -184,6 +301,10 @@ fn serve_requested_session(
         .get("mode")
         .and_then(Value::as_str)
         .unwrap_or("view");
+    let device_id = request
+        .get("device_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "คำขอ Remote ไม่มี device id".to_string())?;
     let permission = if mode == "control" {
         "ดูหน้าจอและควบคุมเมาส์/คีย์บอร์ด"
     } else {
@@ -199,13 +320,60 @@ fn serve_requested_session(
         .show()
         == MessageDialogResult::Yes;
     if !allowed {
-        return patch_session(agent, &session.token, id, json!({"status":"denied"}));
+        audit_event(agent, session, device_id, id, "denied", mode);
+        return patch_session(
+            agent,
+            &session.token,
+            id,
+            json!({"status":"denied","closed_reason":"host_denied"}),
+        );
     }
     let offer = request
         .get("offer")
         .cloned()
         .ok_or_else(|| "คำขอ Remote ยังเตรียมการเชื่อมต่อไม่ครบ".to_string())?;
-    patch_session(agent, &session.token, id, json!({"status":"accepted"}))?;
+    let secret = device_approval_secret()?;
+    let code = approval_code(&secret, id);
+    let code_hash = approval_hash(&secret, &code);
+    let expires_at = (OffsetDateTime::now_utc() + time::Duration::minutes(2))
+        .format(&Rfc3339)
+        .map_err(|error| error.to_string())?;
+    patch_session(
+        agent,
+        &session.token,
+        id,
+        json!({
+            "approval_code_hash":code_hash,
+            "approval_expires_at":expires_at,
+            "approval_attempts":0,
+            "approval_code_input":null
+        }),
+    )?;
+    audit_event(agent, session, device_id, id, "approval_requested", mode);
+    MessageDialog::new()
+        .set_level(MessageLevel::Info)
+        .set_title("CommandBlock Remote PC")
+        .set_description(format!(
+            "ยืนยันเครื่องปลายทางแล้ว\n\nกรอกรหัสนี้บน CommandBlock Web ภายใน 2 นาที:\n\n{code}\n\nห้ามบอกรหัสนี้ให้ผู้อื่น"
+        ))
+        .set_buttons(MessageButtons::Ok)
+        .show();
+    if !wait_for_approval(agent, &session.token, id, &secret, &code_hash)? {
+        audit_event(agent, session, device_id, id, "approval_failed", mode);
+        return patch_session(
+            agent,
+            &session.token,
+            id,
+            json!({"status":"denied","closed_reason":"approval_expired_or_invalid"}),
+        );
+    }
+    patch_session(
+        agent,
+        &session.token,
+        id,
+        json!({"status":"accepted","host_verified_at":now_rfc3339()?}),
+    )?;
+    audit_event(agent, session, device_id, id, "accepted", mode);
     match futures::executor::block_on(run_peer(
         &offer,
         mode == "control",
@@ -213,9 +381,23 @@ fn serve_requested_session(
         session.token.clone(),
         id.to_owned(),
     )) {
-        Ok(()) => patch_session(agent, &session.token, id, json!({"status":"closed"})),
+        Ok(()) => {
+            audit_event(agent, session, device_id, id, "closed", mode);
+            patch_session(
+                agent,
+                &session.token,
+                id,
+                json!({"status":"closed","closed_reason":"completed"}),
+            )
+        }
         Err(error) => {
-            let _ = patch_session(agent, &session.token, id, json!({"status":"closed"}));
+            audit_event(agent, session, device_id, id, "closed", mode);
+            let _ = patch_session(
+                agent,
+                &session.token,
+                id,
+                json!({"status":"closed","closed_reason":"connection_error"}),
+            );
             Err(error)
         }
     }
