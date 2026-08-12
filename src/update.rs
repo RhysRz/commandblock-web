@@ -1,13 +1,18 @@
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::Read;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 const RELEASE_URL: &str = "https://api.github.com/repos/RhysRz/commandblock-web/releases/latest";
 const PACKAGE: &str = "CommandBlock-Windows-x64.zip";
 const CHECKSUM: &str = "CommandBlock-Windows-x64.zip.sha256";
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Clone, Debug)]
 struct Release {
@@ -287,9 +292,13 @@ fn read_package_with_progress(release: &Release) -> Result<Vec<u8>, String> {
             }
         }
     }
-    Err(format!(
+    let primary_error = format!(
         "ดาวน์โหลดอัปเดตไม่สำเร็จหลังลองใหม่ 3 ครั้ง: {last_error}"
-    ))
+    );
+    choose_download_result(
+        || Err(primary_error),
+        || read_package_with_curl(release),
+    )
 }
 
 fn read_package_attempt(
@@ -365,6 +374,68 @@ where
     Err(format!(
         "ดาวน์โหลดไฟล์ตรวจสอบไม่สำเร็จหลังลองใหม่ 3 ครั้ง: {last_error}"
     ))
+}
+
+fn choose_download_result<T, P, F>(primary: P, fallback: F) -> Result<T, String>
+where
+    P: FnOnce() -> Result<T, String>,
+    F: FnOnce() -> Result<T, String>,
+{
+    match primary() {
+        Ok(value) => Ok(value),
+        Err(primary_error) => fallback().map_err(|fallback_error| {
+            format!("{primary_error}\nดาวน์โหลดสำรองด้วย Windows curl ไม่สำเร็จ: {fallback_error}")
+        }),
+    }
+}
+
+fn read_package_with_curl(release: &Release) -> Result<Vec<u8>, String> {
+    let folder = updates_dir();
+    std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
+    let temporary = folder.join(format!(
+        "download-{}-{}.zip",
+        std::process::id(),
+        time::OffsetDateTime::now_utc().unix_timestamp_nanos()
+    ));
+    let mut command = Command::new("curl.exe");
+    command
+        .args([
+            "--fail",
+            "--location",
+            "--retry",
+            "3",
+            "--retry-all-errors",
+            "--silent",
+            "--show-error",
+            "--output",
+        ])
+        .arg(&temporary)
+        .arg(&release.package_url);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command.output().map_err(|error| format!("เรียก Windows curl ไม่ได้: {error}"))?;
+    let result = (|| {
+        if !output.status.success() {
+            let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(if message.is_empty() {
+                format!("Windows curl จบด้วยสถานะ {}", output.status)
+            } else {
+                message
+            });
+        }
+        let bytes = std::fs::read(&temporary).map_err(|error| error.to_string())?;
+        if let Some(expected_size) = release.package_size {
+            if bytes.len() as u64 != expected_size {
+                return Err(format!(
+                    "ไฟล์จาก Windows curl มีขนาด {} bytes แต่ควรเป็น {expected_size} bytes",
+                    bytes.len()
+                ));
+            }
+        }
+        Ok(bytes)
+    })();
+    let _ = std::fs::remove_file(&temporary);
+    result
 }
 
 fn progress_percent(downloaded: u64, total: Option<u64>) -> Option<u8> {
@@ -443,5 +514,19 @@ mod tests {
         );
         assert_eq!(result.unwrap(), "checksum");
         assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn download_uses_fallback_after_primary_transport_exhausts() {
+        let mut fallback_calls = 0;
+        let result = super::choose_download_result(
+            || Err("primary Unexpected EOF".to_string()),
+            || {
+                fallback_calls += 1;
+                Ok("archive")
+            },
+        );
+        assert_eq!(result.unwrap(), "archive");
+        assert_eq!(fallback_calls, 1);
     }
 }
