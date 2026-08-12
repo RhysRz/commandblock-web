@@ -391,7 +391,7 @@ fn serve_requested_session(
         json!({"status":"accepted","host_verified_at":now_rfc3339()?}),
     )?;
     audit_event(agent, session, device_id, id, "accepted", mode);
-    match futures::executor::block_on(run_peer(
+    match block_on_webrtc(run_peer(
         &offer,
         mode == "control",
         agent.clone(),
@@ -418,6 +418,16 @@ fn serve_requested_session(
             Err(error)
         }
     }
+}
+
+/// WebRTC ใช้ Tokio ภายใน จึงต้องขับ future ด้วย runtime ของไลบรารีเอง
+/// แทน `futures::executor::block_on` ที่ไม่มี async I/O reactor.
+fn block_on_webrtc<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("สร้าง Tokio runtime สำหรับ Remote PC ไม่สำเร็จ")
+        .block_on(future)
 }
 
 #[derive(Clone)]
@@ -719,5 +729,10 @@ mod tests {
     fn remote_peer_binds_an_ephemeral_udp_socket_for_ice() {
         let expected = "0.0.0.0:0".parse::<std::net::SocketAddr>().unwrap();
         assert_eq!(super::remote_udp_bind_addrs(), vec![expected]);
+    }
+
+    #[test]
+    fn remote_peer_runs_inside_the_webrtc_runtime() {
+        assert_eq!(super::block_on_webrtc(async { 6 * 7 }), 42);
     }
 }

@@ -21,6 +21,7 @@ async-trait = "0.1"
 base64 = "0.22"
 bytes = "1"
 futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time"] }
 scrap = "0.5"
 webrtc = "0.20.0-alpha.1"
 enigo = { version = "0.6", default-features = false, features = ["platform_specific"] }
