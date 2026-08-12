@@ -25,4 +25,8 @@ test('connector mode prepares a Windows console before asking for credentials', 
   assert.match(main, /connector::prepare_console\(\);[\s\S]*connector::run\(connector_agent\)/);
   assert.match(connector, /AttachConsole\(ATTACH_PARENT_PROCESS\)/);
   assert.match(connector, /AllocConsole\(\)/);
+  assert.match(connector, /CreateFileW\(console_input\.as_ptr\(\)/);
+  assert.match(connector, /SetStdHandle\(STD_INPUT_HANDLE, input\)/);
+  assert.match(connector, /SetStdHandle\(STD_OUTPUT_HANDLE, output\)/);
+  assert.match(connector, /SetStdHandle\(STD_ERROR_HANDLE, output\)/);
 });

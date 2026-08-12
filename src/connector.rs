@@ -15,10 +15,30 @@ const SUPABASE_PUBLISHABLE_KEY: &str = "sb_publishable_UJMuyL3QY8lMEWJKZi3zAQ_NF
 #[cfg(windows)]
 pub fn prepare_console() {
     const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    const STD_INPUT_HANDLE: u32 = u32::MAX - 9;
+    const STD_OUTPUT_HANDLE: u32 = u32::MAX - 10;
+    const STD_ERROR_HANDLE: u32 = u32::MAX - 11;
+    const GENERIC_READ: u32 = 0x8000_0000;
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+    const OPEN_EXISTING: u32 = 3;
+    const INVALID_HANDLE_VALUE: isize = -1;
 
     unsafe {
         if GetConsoleWindow().is_null() && AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
             let _ = AllocConsole();
+        }
+        let console_input: Vec<u16> = "CONIN$\0".encode_utf16().collect();
+        let console_output: Vec<u16> = "CONOUT$\0".encode_utf16().collect();
+        let input = CreateFileW(console_input.as_ptr(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, std::ptr::null(), OPEN_EXISTING, 0, 0);
+        let output = CreateFileW(console_output.as_ptr(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, std::ptr::null(), OPEN_EXISTING, 0, 0);
+        if input != INVALID_HANDLE_VALUE {
+            let _ = SetStdHandle(STD_INPUT_HANDLE, input);
+        }
+        if output != INVALID_HANDLE_VALUE {
+            let _ = SetStdHandle(STD_OUTPUT_HANDLE, output);
+            let _ = SetStdHandle(STD_ERROR_HANDLE, output);
         }
     }
 }
@@ -32,6 +52,8 @@ extern "system" {
     fn AttachConsole(process_id: u32) -> i32;
     fn AllocConsole() -> i32;
     fn GetConsoleWindow() -> *mut c_void;
+    fn CreateFileW(name: *const u16, access: u32, share: u32, security: *const c_void, creation: u32, flags: u32, template: isize) -> isize;
+    fn SetStdHandle(which: u32, handle: isize) -> i32;
 }
 
 pub fn safe_child(root: &Path, requested: &str) -> Result<PathBuf, String> {
