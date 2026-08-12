@@ -329,6 +329,19 @@
   .statusbar .modelbtn .tri { font-size: 9px; color: var(--muted); }
   .statusbar .sp { flex: 1; }
   .statusbar .dot { color: var(--ok); }
+  .update-notice {
+    display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 7px 9px;
+    border: 1px solid rgba(166, 109, 255, .48); border-radius: 9px;
+    background: rgba(139, 108, 246, .10); font-size: 11.5px;
+  }
+  .update-notice[hidden] { display: none; }
+  .update-copy { min-width: 0; flex: 1; color: var(--text); }
+  .update-progress { width: 90px; height: 5px; overflow: hidden; border-radius: 999px; background: var(--panel2); }
+  .update-progress > i { display: block; width: 0; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s ease; }
+  .update-progress.indeterminate > i { width: 45%; animation: update-sweep 1s ease-in-out infinite alternate; }
+  @keyframes update-sweep { from { transform: translateX(-45%); } to { transform: translateX(165%); } }
+  #updateDownload { flex: none; border: 1px solid rgba(194, 140, 255, .55); border-radius: 7px; padding: 4px 8px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+  #updateDownload:disabled { cursor: wait; opacity: .7; }
   /* dropdown เลือกโมเดล */
   .modelwrap { position: relative; display: inline-flex; }
   .modelmenu {
@@ -807,6 +820,11 @@
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.5 4.5a2 2 0 0 1 2-2h2.6l1.4 1.6h4.5a2 2 0 0 1 2 2v5.4a2 2 0 0 1-2 2h-8.5a2 2 0 0 1-2-2z"/></svg>
       <span class="fname" id="folderName">…</span>
     </div>
+    <div class="update-notice" id="updateNotice" role="status" aria-live="polite" hidden>
+      <span class="update-copy" id="updateText"></span>
+      <span class="update-progress" id="updateProgress" hidden><i></i></span>
+      <button id="updateDownload" hidden>ดาวน์โหลด</button>
+    </div>
     <input type="file" id="fileInput" multiple hidden>
     <div class="statusbar">
       <span class="dot">●</span>
@@ -940,6 +958,47 @@ fetch("/api/state").then(r => r.json()).then(s => {
 }).catch(() => {
   document.getElementById("modelPill").textContent = "offline";
 });
+
+/* ---------- อัปเดตแอปเดสก์ท็อป ---------- */
+const updateNotice = document.getElementById("updateNotice");
+const updateText = document.getElementById("updateText");
+const updateProgress = document.getElementById("updateProgress");
+const updateProgressFill = updateProgress.querySelector("i");
+const updateDownload = document.getElementById("updateDownload");
+function updateSize(bytes){
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+function renderUpdate(s){
+  const active = s && ["available", "downloading", "ready", "error"].includes(s.state);
+  updateNotice.hidden = !active;
+  if (!active) return;
+  updateDownload.hidden = s.state !== "available";
+  updateDownload.disabled = s.state === "downloading";
+  updateProgress.hidden = s.state !== "downloading";
+  updateProgress.classList.toggle("indeterminate", s.state === "downloading" && !Number.isFinite(s.percent));
+  if (s.state === "available") updateText.textContent = "มี CommandBlock รุ่นใหม่พร้อมให้ดาวน์โหลด";
+  if (s.state === "downloading") {
+    const detail = Number.isFinite(s.total) ? " · " + updateSize(s.downloaded || 0) + " / " + updateSize(s.total) : "";
+    updateText.textContent = "กำลังดาวน์โหลดอัปเดต" + (Number.isFinite(s.percent) ? " " + s.percent + "%" : "") + detail;
+    updateProgressFill.style.width = Number.isFinite(s.percent) ? s.percent + "%" : "";
+  }
+  if (s.state === "ready") updateText.textContent = "ดาวน์โหลดอัปเดตแล้ว — ปิดแล้วเปิด CommandBlock ใหม่เพื่อติดตั้ง";
+  if (s.state === "error") updateText.textContent = "อัปเดตไม่สำเร็จ: " + (s.message || "ไม่ทราบสาเหตุ");
+}
+async function refreshUpdate(){
+  try { renderUpdate(await fetch("/api/update").then(r => r.json())); } catch (_) {}
+}
+updateDownload.addEventListener("click", async () => {
+  updateDownload.disabled = true;
+  try {
+    const response = await fetch("/api/update", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action:"download"}) });
+    renderUpdate(await response.json());
+  } catch (_) { renderUpdate({state:"error", message:"เชื่อมต่อระบบอัปเดตไม่ได้"}); }
+});
+refreshUpdate();
+setInterval(refreshUpdate, 1200);
 
 /* ---------- เลือกโมเดล (status bar) ---------- */
 const modelMenu = document.getElementById("modelMenu");

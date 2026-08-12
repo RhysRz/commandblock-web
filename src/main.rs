@@ -89,7 +89,7 @@ fn main() {
         return;
     }
     let args: Vec<String> = std::env::args().collect();
-    update::stage_newer_release_async();
+    update::check_for_update_async();
 
     if args.len() >= 2 {
         match args[1].as_str() {

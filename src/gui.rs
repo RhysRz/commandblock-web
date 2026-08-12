@@ -5,7 +5,7 @@
 //! - GET  /api/state   สถานะแบ็กเอนด์/โมเดล/จำนวนข้อความ
 //! - POST /api/chat    ส่งข้อความ → สตรีมคำตอบกลับเป็น SSE (content/tool/note/done)
 
-use crate::{config, connector, remote, tools, TurnSink};
+use crate::{config, connector, remote, tools, update, TurnSink};
 use image::GenericImageView;
 use serde_json::{json, Value};
 use std::io::{BufWriter, Read, Write};
@@ -709,6 +709,45 @@ fn handle(
                 "application/json",
                 json!({ "models": list }).to_string().as_bytes(),
             );
+        }
+        ("GET", "/api/update") => {
+            let state = update::status_json();
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                state.to_string().as_bytes(),
+            );
+        }
+        ("POST", "/api/update") => {
+            let action = serde_json::from_str::<Value>(&body_str)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("action")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+                .unwrap_or_default();
+            let result = if action == "download" {
+                update::download_available_release_async().map(|_| update::status_json())
+            } else {
+                Err("ไม่รู้จักคำสั่งอัปเดต".to_string())
+            };
+            match result {
+                Ok(state) => respond(
+                    &mut out,
+                    202,
+                    "application/json",
+                    state.to_string().as_bytes(),
+                ),
+                Err(message) => respond(
+                    &mut out,
+                    409,
+                    "application/json",
+                    json!({"error": message}).to_string().as_bytes(),
+                ),
+            }
         }
         ("POST", "/api/model") => {
             let sel = serde_json::from_str::<Value>(&body_str)
