@@ -63,7 +63,7 @@ pub fn run(agent: ureq::Agent) -> Result<(), String> {
     println!("CommandBlock Remote PC");
     println!("ลงชื่อเข้าใช้บัญชีเดียวกับ CommandBlock Web (จะไม่บันทึกรหัสผ่าน)");
     let email = prompt("อีเมล: ")?;
-    let password = rpassword::prompt_password("รหัสผ่าน: ").map_err(|e| e.to_string())?;
+    let password = prompt_remote_password()?;
     let session = sign_in(&agent, &email, &password)?;
     let name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string());
     let device = create_device(&agent, &session, &name)?;
@@ -79,17 +79,34 @@ pub fn run(agent: ureq::Agent) -> Result<(), String> {
 }
 
 fn prompt(label: &str) -> Result<String, String> {
+    let value = prompt_optional(label)?;
+    if value.is_empty() {
+        Err("ห้ามเว้นว่าง".to_string())
+    } else {
+        Ok(value)
+    }
+}
+
+fn prompt_optional(label: &str) -> Result<String, String> {
     print!("{label}");
     io::stdout().flush().map_err(|e| e.to_string())?;
     let mut value = String::new();
     io::stdin()
         .read_line(&mut value)
         .map_err(|e| e.to_string())?;
-    let value = value.trim().to_string();
-    if value.is_empty() {
-        Err("ห้ามเว้นว่าง".to_string())
+    Ok(value.trim().to_string())
+}
+
+fn show_password_requested(input: &str) -> bool {
+    matches!(input.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+}
+
+fn prompt_remote_password() -> Result<String, String> {
+    let choice = prompt_optional("แสดงรหัสผ่านขณะพิมพ์หรือไม่? [y/N]: ")?;
+    if show_password_requested(&choice) {
+        prompt_optional("รหัสผ่าน (แสดง): ")
     } else {
-        Ok(value)
+        rpassword::prompt_password("รหัสผ่าน (ซ่อน): ").map_err(|error| error.to_string())
     }
 }
 
@@ -681,5 +698,14 @@ mod tests {
     #[test]
     fn chunk_size_stays_inside_webrtc_message_limit() {
         assert!(super::FRAME_CHUNK_BYTES < 16_384);
+    }
+
+    #[test]
+    fn visible_password_requires_an_explicit_yes() {
+        assert!(super::show_password_requested("y"));
+        assert!(super::show_password_requested(" YES "));
+        assert!(!super::show_password_requested(""));
+        assert!(!super::show_password_requested("n"));
+        assert!(!super::show_password_requested("show"));
     }
 }
