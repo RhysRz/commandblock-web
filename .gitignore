@@ -5,6 +5,7 @@ config.json
 !.env.example
 buff_session.json
 .freebuff/
+.worktrees/
 
 # Build output and bundled runtime
 target/
