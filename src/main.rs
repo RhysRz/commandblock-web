@@ -12,6 +12,7 @@ mod gui;
 mod llm;
 
 use commandblock::connector;
+use commandblock::update;
 pub use commandblock::tools;
 
 use serde_json::{json, Value};
@@ -83,7 +84,11 @@ const SESSION_FILE: &str = "buff_session.json"; // ความจำข้า�
 const SESSION_KEEP: usize = 20; // จำนวนข้อความล่าสุดที่บันทึกลง session
 
 fn main() {
+    if update::apply_staged_update() {
+        return;
+    }
     let args: Vec<String> = std::env::args().collect();
+    update::stage_newer_release_async();
 
     if args.len() >= 2 {
         match args[1].as_str() {

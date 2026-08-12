@@ -8,6 +8,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Ollama bundle validation failed.' }
 cargo build --release
 Copy-Item -LiteralPath 'target\release\commandblock.exe' -Destination 'Commandblock.exe' -Force
 Copy-Item -LiteralPath 'target\release\commandblock-connector.exe' -Destination 'commandblock-connector.exe' -Force
+Copy-Item -LiteralPath 'target\release\commandblock-updater.exe' -Destination 'commandblock-updater.exe' -Force
 
 $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
 if (-not $iscc) {

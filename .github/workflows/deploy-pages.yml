@@ -1,6 +1,6 @@
 name: Deploy Commandblock Web
 on: { push: { branches: [main] }, workflow_dispatch: {} }
-permissions: { contents: read, pages: write, id-token: write }
+permissions: { contents: write, pages: write, id-token: write }
 jobs:
   deploy:
     environment: { name: github-pages, url: '${{ steps.deployment.outputs.page_url }}' }
@@ -15,3 +15,18 @@ jobs:
         with: { path: site }
       - id: deployment
         uses: actions/deploy-pages@v4
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item target\release\commandblock.exe package\Commandblock.exe
+          Copy-Item target\release\commandblock-connector.exe package\commandblock-connector.exe
+          Compress-Archive -Path package\* -DestinationPath CommandBlock-Windows-x64.zip
+          (Get-FileHash CommandBlock-Windows-x64.zip -Algorithm SHA256).Hash.ToLower() | Set-Content CommandBlock-Windows-x64.zip.sha256 -NoNewline
+      - env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release create build-${{ github.sha }} CommandBlock-Windows-x64.zip CommandBlock-Windows-x64.zip.sha256 --title "CommandBlock build ${{ github.sha }}" --generate-notes --latest
