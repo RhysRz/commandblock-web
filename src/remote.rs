@@ -427,6 +427,11 @@ struct RemoteHandler {
     done: Sender<()>,
     ice_done: Sender<()>,
 }
+
+fn remote_udp_bind_addrs() -> Vec<std::net::SocketAddr> {
+    vec![std::net::SocketAddr::from(([0, 0, 0, 0], 0))]
+}
+
 #[async_trait::async_trait]
 impl PeerConnectionEventHandler for RemoteHandler {
     async fn on_ice_gathering_state_change(&self, state: RTCIceGatheringState) {
@@ -481,6 +486,7 @@ async fn run_peer(
             done: done_tx.clone(),
             ice_done: ice_tx,
         }))
+        .with_udp_addrs(remote_udp_bind_addrs())
         .with_runtime(runtime.clone())
         .build()
         .await
@@ -707,5 +713,11 @@ mod tests {
         assert!(!super::show_password_requested(""));
         assert!(!super::show_password_requested("n"));
         assert!(!super::show_password_requested("show"));
+    }
+
+    #[test]
+    fn remote_peer_binds_an_ephemeral_udp_socket_for_ice() {
+        let expected = "0.0.0.0:0".parse::<std::net::SocketAddr>().unwrap();
+        assert_eq!(super::remote_udp_bind_addrs(), vec![expected]);
     }
 }
