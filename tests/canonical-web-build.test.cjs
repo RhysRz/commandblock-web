@@ -6,13 +6,13 @@ const test = require('node:test');
 
 const root = path.join(__dirname, '..');
 
-test('web build publishes the canonical Commandblock UI and inserts the adapter first', () => {
+test('web build publishes the canonical CommandBlock UI and inserts the adapter first', () => {
   execFileSync(process.execPath, ['scripts/build-web.mjs'], { cwd: root });
 
   const output = fs.readFileSync(path.join(root, 'site', 'index.html'), 'utf8');
   assert.match(output, /id="iconrail"/);
   assert.match(output, /id="chat"/);
-  assert.match(output, /Commandblock — ผู้ช่วยพัฒนาโค้ด AI/);
+  assert.match(output, /CommandBlock — ผู้ช่วยพัฒนาโค้ด AI/);
   assert.match(output, /src="\.\/cloud-adapter\.js"/);
   assert.ok(output.indexOf('cloud-adapter.js') < output.indexOf('<script>'));
   assert.match(output, /src="\.\/assets\/buff-command-block\.png"/);

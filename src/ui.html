@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Commandblock — ผู้ช่วยพัฒนาโค้ด AI</title>
+<title>CommandBlock — ผู้ช่วยพัฒนาโค้ด AI</title>
 <style>
   :root {
     --bg: #0d1117;
@@ -775,12 +775,12 @@
 <!-- ================= LEFT: chat ================= -->
 <section id="chatpane">
   <div class="chat-head">
-    <div class="logo"><img src="/assets/buff-command-block.png" alt="Commandblock Command Block"></div>
+    <div class="logo"><img src="/assets/buff-command-block.png" alt="CommandBlock Command Block"></div>
     <div class="chat-title">
-      <h1>Commandblock <span id="ver" style="color:var(--muted);font-weight:400;font-size:11px"></span></h1>
+      <h1>CommandBlock <span id="ver" style="color:var(--muted);font-weight:400;font-size:11px"></span></h1>
       <div class="sub">ผู้ช่วยพัฒนาโค้ด AI — ทำงานในเครื่องของคุณเอง</div>
     </div>
-    <button class="pill" id="folderBtn" title="เปิดโฟลเดอร์ — อ่านไฟล์ทั้งโฟลเดอร์ให้ Commandblock เข้าใจแล้วแก้ต่อได้">📂 โฟลเดอร์</button>
+    <button class="pill" id="folderBtn" title="เปิดโฟลเดอร์ — อ่านไฟล์ทั้งโฟลเดอร์ให้ CommandBlock เข้าใจแล้วแก้ต่อได้">📂 โฟลเดอร์</button>
     <button class="pill" id="previewPill" title="เปิดแท็บพรีวิว">
       /preview
       <span class="t" id="clock">—:—</span>
@@ -862,7 +862,7 @@
         <button onclick="refreshPreview()">↻ รีเฟรช</button>
         <button onclick="openPreviewBrowser()">เปิดในเบราว์เซอร์</button>
       </div>
-      <div class="emptyhint" id="previewHint">ยังไม่มีพรีวิว — บอก Commandblock ว่า "สร้างหน้าเว็บแล้วเปิดพรีวิวให้ดู"</div>
+      <div class="emptyhint" id="previewHint">ยังไม่มีพรีวิว — บอก CommandBlock ว่า "สร้างหน้าเว็บแล้วเปิดพรีวิวให้ดู"</div>
       <iframe id="previewFrame" hidden></iframe>
     </div>
 
@@ -1091,7 +1091,7 @@ const EXAMPLES=[
 ];
 (function(){
   const w=document.createElement("div"); w.className="welcome";
-  w.innerHTML='<p>สวัสดีครับ! ผมคือ <b>Commandblock</b> — พิมพ์งานเป็นภาษาไทย แล้วผมจะวางแผน ใช้เครื่องมือ และลงมือทำเองจนเสร็จ ลองตัวอย่างเหล่านี้ได้เลย:</p>'+
+  w.innerHTML='<p>สวัสดีครับ! ผมคือ <b>CommandBlock</b> — พิมพ์งานเป็นภาษาไทย แล้วผมจะวางแผน ใช้เครื่องมือ และลงมือทำเองจนเสร็จ ลองตัวอย่างเหล่านี้ได้เลย:</p>'+
     '<div class="chips">'+EXAMPLES.map(([t,ic])=>'<button class="chip">'+ic+" "+esc(t)+"</button>").join("")+"</div>";
   wrap.appendChild(w);
   wrap.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{ input.value=c.textContent.replace(/^[^\s]+\s/,"").trim(); send(); });
@@ -1351,7 +1351,7 @@ async function loadChanges(){
     const list=document.getElementById("changesList"); list.innerHTML="";
     document.getElementById("changesCount").textContent=(j.changes||[]).length+" ไฟล์";
     if(!j.changes.length){
-      list.innerHTML='<div class="emptyhint">ยังไม่มีการแก้ไฟล์ในเซสชันนี้ — บอกให้ Commandblock แก้โค้ดแล้วกลับมาดูที่นี่</div>';
+      list.innerHTML='<div class="emptyhint">ยังไม่มีการแก้ไฟล์ในเซสชันนี้ — บอกให้ CommandBlock แก้โค้ดแล้วกลับมาดูที่นี่</div>';
       return;
     }
     j.changes.forEach(f=>{
@@ -1376,7 +1376,7 @@ async function loadQueue(){
     const res=await fetch("/api/queue"); const j=await res.json();
     const list=document.getElementById("queueList"); list.innerHTML="";
     const act=j.activity||[];
-    if(!act.length){ list.innerHTML='<div class="emptyhint">ยังไม่มีกิจกรรม — ส่งงานให้ Commandblock แล้วจะเห็นเครื่องมือที่ใช้ที่นี่</div>'; return; }
+    if(!act.length){ list.innerHTML='<div class="emptyhint">ยังไม่มีกิจกรรม — ส่งงานให้ CommandBlock แล้วจะเห็นเครื่องมือที่ใช้ที่นี่</div>'; return; }
     act.slice(-15).reverse().forEach(a=>{
       const d=document.createElement("div"); d.className="litem"; d.style.cursor="default";
       const m=a.match(/^(\S+)/); const name=m?m[1]:a;
@@ -1415,7 +1415,7 @@ async function saveNotes(){
 
 /* feedback */
 document.getElementById("fb").addEventListener("click",()=>{
-  alert("Commandblock ถูกสร้างจากซอร์สโค้ดในโฟลเดอร์นี้ — แก้ไข/พัฒนาได้ตามใจชอบเลยครับ! 🤖");
+  alert("CommandBlock ถูกสร้างจากซอร์สโค้ดในโฟลเดอร์นี้ — แก้ไข/พัฒนาได้ตามใจชอบเลยครับ! 🤖");
 });
 </script>
 
@@ -1434,7 +1434,7 @@ document.getElementById("fb").addEventListener("click",()=>{
       </div>
       <div class="set-sec">
         <div class="set-label">Preloaded skills</div>
-        <div class="set-desc">Start every new thread in this project with these skills active — Commandblock อ่านและปฏิบัติตาม SKILL.md ของมันจริง</div>
+        <div class="set-desc">Start every new thread in this project with these skills active — CommandBlock อ่านและปฏิบัติตาม SKILL.md ของมันจริง</div>
         <div class="skills-head">
           <input id="skillSearch" class="skill-search" placeholder="ค้นหาทักษะ…">
           <span id="skillCount" class="skill-count"></span>
@@ -1492,7 +1492,7 @@ folderBtn.addEventListener("click", async ()=>{
       // อัปเดตชื่อโฟลเดอร์ปัจจุบัน — ใช้ชื่อโฟลเดอร์ที่เลือก (ตัดพาธ) ถ้าได้
       const name = (j.path || "").split(/[\\\/]/).filter(Boolean).pop() || j.root || "";
       setFolder(name, j.path);
-      toast("📂 เปิดโฟลเดอร์แล้ว: " + name + " — อ่าน " + j.files + " ไฟล์ (" + (j.chars/1000).toFixed(0) + "K ตัวอักษร) Commandblock เข้าใจแล้ว ถาม/สั่งแก้ได้เลย", "ok");
+      toast("📂 เปิดโฟลเดอร์แล้ว: " + name + " — อ่าน " + j.files + " ไฟล์ (" + (j.chars/1000).toFixed(0) + "K ตัวอักษร) CommandBlock เข้าใจแล้ว ถาม/สั่งแก้ได้เลย", "ok");
     } else {
       toast("เปิดโฟลเดอร์ไม่สำเร็จ", "err");
     }

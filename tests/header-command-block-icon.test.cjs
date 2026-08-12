@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'ui.html'), 'utf8
 test('header logo uses the shared orange command-block image', () => {
   assert.match(
     html,
-    /<div class="logo">\s*<img src="\/assets\/buff-command-block\.png" alt="Commandblock Command Block">\s*<\/div>/,
+    /<div class="logo">\s*<img src="\/assets\/buff-command-block\.png" alt="CommandBlock Command Block">\s*<\/div>/,
   );
   assert.match(html, /\.logo img\s*\{[^}]*object-fit:\s*contain/);
 });

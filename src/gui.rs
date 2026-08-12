@@ -410,7 +410,7 @@ pub fn serve(agent: ureq::Agent, eff: &config::Effective, cfg_models: Vec<config
         Err(e) => {
             println!();
             println!("⚠️ เปิดหน้าต่างแอปไม่ได้ ({e}) — เปิดในเบราว์เซอร์แทน: {url}");
-            println!("   (ปิดหน้าต่างนี้หรือกด Ctrl+C เพื่อปิด Commandblock)\n");
+            println!("   (ปิดหน้าต่างนี้หรือกด Ctrl+C เพื่อปิด CommandBlock)\n");
             tools::open_browser(&url);
             loop {
                 std::thread::sleep(std::time::Duration::from_secs(3600));
@@ -440,7 +440,7 @@ fn run_desktop_window(url: &str) -> Result<(), String> {
                 return;
             }
             let attrs = Window::default_attributes()
-                .with_title("🤖 Commandblock — ผู้ช่วยพัฒนาโค้ด AI")
+                .with_title("🤖 CommandBlock — ผู้ช่วยพัฒนาโค้ด AI")
                 .with_inner_size(LogicalSize::new(1000.0, 720.0))
                 .with_min_inner_size(LogicalSize::new(480.0, 360.0));
             let attrs = match &self.icon {
@@ -752,7 +752,7 @@ fn handle(
         ("POST", "/api/pick-folder") => {
             // กล่องเลือกโฟลเดอร์แบบ native (ของ Windows — ไม่ใช่ป๊อปอัปเว็บ)
             let picked = rfd::FileDialog::new()
-                .set_title("เลือกโฟลเดอร์ — Commandblock จะอ่านไฟล์ทั้งโฟลเดอร์")
+                .set_title("เลือกโฟลเดอร์ — CommandBlock จะอ่านไฟล์ทั้งโฟลเดอร์")
                 .pick_folder();
             match picked {
                 Some(dir) => {
@@ -926,7 +926,7 @@ fn try_command(message: &str, _eff: &config::Effective, shared: &Mutex<Shared>) 
         ),
         "/plan" => match &g.plan {
             Some(p) => format!("แผนงานปัจจุบัน:\n{p}"),
-            None => "ยังไม่มีแผน — บอกให้ Commandblock วางแผนก่อนเริ่มงานได้".to_string(),
+            None => "ยังไม่มีแผน — บอกให้ CommandBlock วางแผนก่อนเริ่มงานได้".to_string(),
         },
         "/skills" => tools::list_skills_public(),
         "/reset" | "/clear" => {
@@ -951,7 +951,7 @@ fn commands_text() -> String {
         "คำสั่งในแชท:",
         "  /help     ดูคำสั่งนี้",
         "  /model    ดูแบ็กเอนด์/โมเดลที่ใช้อยู่",
-        "  /plan     ดูแผนงานล่าสุดของ Commandblock",
+        "  /plan     ดูแผนงานล่าสุดของ CommandBlock",
         "  /skills   ดูรายการทักษะเฉพาะทางที่โหลดได้",
         "  /preview  เปิดพรีวิวเว็บครั้งล่าสุดอีกครั้ง",
         "  /reset    ล้างประวัติการสนทนา เริ่มใหม่",

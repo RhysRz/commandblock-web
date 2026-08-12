@@ -17,3 +17,12 @@ test('connector relay schema scopes devices and commands to their owning user', 
   assert.match(sql, /status in \('queued', 'running', 'completed', 'rejected', 'failed'\)/i);
   assert.match(sql, /where status = 'queued'/i);
 });
+
+test('connector mode prepares a Windows console before asking for credentials', () => {
+  const main = fs.readFileSync(path.join(root, 'src', 'main.rs'), 'utf8');
+  const connector = fs.readFileSync(path.join(root, 'src', 'connector.rs'), 'utf8');
+
+  assert.match(main, /connector::prepare_console\(\);[\s\S]*connector::run\(connector_agent\)/);
+  assert.match(connector, /AttachConsole\(ATTACH_PARENT_PROCESS\)/);
+  assert.match(connector, /AllocConsole\(\)/);
+});

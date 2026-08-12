@@ -4,8 +4,35 @@ use std::path::{Component, Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
+#[cfg(windows)]
+use std::ffi::c_void;
+
 const SUPABASE_URL: &str = "https://qympivgklmstrnhfaywn.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY: &str = "sb_publishable_UJMuyL3QY8lMEWJKZi3zAQ_NFKZY8TH";
+
+/// แอปหลักเป็น Windows GUI subsystem จึงไม่มี console โดยค่าเริ่มต้น
+/// แต่ Connector ต้องถามข้อมูลรับรองใน terminal ก่อนเริ่มทำงาน
+#[cfg(windows)]
+pub fn prepare_console() {
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+
+    unsafe {
+        if GetConsoleWindow().is_null() && AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
+            let _ = AllocConsole();
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn prepare_console() {}
+
+#[cfg(windows)]
+#[link(name = "Kernel32")]
+extern "system" {
+    fn AttachConsole(process_id: u32) -> i32;
+    fn AllocConsole() -> i32;
+    fn GetConsoleWindow() -> *mut c_void;
+}
 
 pub fn safe_child(root: &Path, requested: &str) -> Result<PathBuf, String> {
     let relative = Path::new(requested);
@@ -19,17 +46,17 @@ pub fn safe_child(root: &Path, requested: &str) -> Result<PathBuf, String> {
 }
 
 pub fn run(agent: ureq::Agent) -> Result<(), String> {
-    println!("Commandblock Desktop Connector");
-    println!("ลงชื่อเข้าใช้บัญชีเดียวกับ Commandblock Web (session นี้จะไม่บันทึกรหัสผ่าน)");
+    println!("CommandBlock Desktop Connector");
+    println!("ลงชื่อเข้าใช้บัญชีเดียวกับ CommandBlock Web (session นี้จะไม่บันทึกรหัสผ่าน)");
     let email = prompt("อีเมล: ")?;
     let password = prompt("รหัสผ่าน: ")?;
     let token = sign_in(&agent, &email, &password)?;
-    let mut root = rfd::FileDialog::new().set_title("เลือกโฟลเดอร์สำหรับ Commandblock Web").pick_folder()
+    let mut root = rfd::FileDialog::new().set_title("เลือกโฟลเดอร์สำหรับ CommandBlock Web").pick_folder()
         .ok_or_else(|| "ยกเลิกการเลือกโฟลเดอร์".to_string())?;
     let name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string());
     let device = create_device(&agent, &token, &name, root_name(&root))?;
     println!("✓ เชื่อมต่อ {} แล้ว — อนุญาตเฉพาะ {}", name, root.display());
-    println!("เปิดหน้านี้ค้างไว้ แล้วกลับไปกด Files หรือ Terminal บน Commandblock Web (Ctrl+C เพื่อหยุด)");
+    println!("เปิดหน้านี้ค้างไว้ แล้วกลับไปกด Files หรือ Terminal บน CommandBlock Web (Ctrl+C เพื่อหยุด)");
 
     loop {
         heartbeat(&agent, &token, &device)?;
@@ -39,7 +66,7 @@ pub fn run(agent: ureq::Agent) -> Result<(), String> {
             let action = command.get("action").and_then(Value::as_str).unwrap_or("");
             let payload = command.get("payload").unwrap_or(&Value::Null);
             let result = if action == "pick_folder" {
-                match rfd::FileDialog::new().set_title("เปลี่ยนโฟลเดอร์สำหรับ Commandblock Web").pick_folder() {
+                match rfd::FileDialog::new().set_title("เปลี่ยนโฟลเดอร์สำหรับ CommandBlock Web").pick_folder() {
                     Some(next_root) => {
                         root = next_root;
                         update_device_root(&agent, &token, &device, root_name(&root))?;

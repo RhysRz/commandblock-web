@@ -43,7 +43,7 @@ struct CliSink {
 impl TurnSink for CliSink {
     fn content(&mut self, delta: &str) {
         if !self.header {
-            print!("Commandblock: ");
+            print!("CommandBlock: ");
             self.header = true;
         }
         print!("{delta}");
@@ -53,7 +53,7 @@ impl TurnSink for CliSink {
         // CLI: ไม่แสดงความคิดของโมเดล (เก็บจอสะอาด) — GUI แสดงเป็นรายละเอียด
     }
     fn tools_begin(&mut self) {
-        println!("[Commandblock กำลังใช้เครื่องมือ…]");
+        println!("[CommandBlock กำลังใช้เครื่องมือ…]");
     }
     fn tool(&mut self, name: &str, args: &Value) {
         println!("  • {name} {}", summarize_args(args));
@@ -91,7 +91,7 @@ fn main() {
                 return;
             }
             "-v" | "--version" => {
-                println!("Commandblock v{VERSION} — ผู้ช่วยพัฒนาโค้ด AI");
+                println!("CommandBlock v{VERSION} — ผู้ช่วยพัฒนาโค้ด AI");
                 return;
             }
             _ => {}
@@ -99,6 +99,7 @@ fn main() {
     }
 
     if args.iter().any(|arg| arg == "--connector") {
+        connector::prepare_console();
         let connector_agent = ureq::AgentBuilder::new()
             .timeout(std::time::Duration::from_secs(30))
             .build();
@@ -140,7 +141,7 @@ fn main() {
         String::new()
     };
 
-    println!("Commandblock v{VERSION} — ผู้ช่วยพัฒนาโค้ด AI");
+    println!("CommandBlock v{VERSION} — ผู้ช่วยพัฒนาโค้ด AI");
     println!(
         "แบ็กเอนด์: {} | model: {} {}",
         eff.backend.label(),
@@ -150,7 +151,7 @@ fn main() {
     if eff.backend == config::Backend::Offline {
         if ollama_up && picked_model.is_none() {
             println!(
-                "⚠️ Ollama เปิดอยู่แต่ยังไม่มีโมเดล — รัน: ollama pull qwen2.5-coder:7b แล้วเปิด Commandblock ใหม่"
+                "⚠️ Ollama เปิดอยู่แต่ยังไม่มีโมเดล — รัน: ollama pull qwen2.5-coder:7b แล้วเปิด CommandBlock ใหม่"
             );
         } else {
             println!(
@@ -230,7 +231,7 @@ fn main() {
                 }
                 "/plan" => match &plan {
                     Some(p) => println!("แผนงานปัจจุบัน:\n{p}"),
-                    None => println!("ยังไม่มีแผน — บอกให้ Commandblock วางแผนก่อนเริ่มงานได้"),
+                    None => println!("ยังไม่มีแผน — บอกให้ CommandBlock วางแผนก่อนเริ่มงานได้"),
                 },
                 "/skills" => println!("{}", tools::list_skills_public()),
                 "/preview" => println!("{}", tools::reopen_preview()),
@@ -320,7 +321,7 @@ pub fn run_turn(
 ) {
     if matches!(eff.backend, config::Backend::Offline) {
         sink.note(
-            "Commandblock: ขอโทษครับ ตอนนี้ยังไม่มี AI ต่อ (โหมด offline)\n   วิธีเปิดใช้งาน:\n     1. ใส่ API key: แก้ไฟล์ config.json (api_key) หรือตั้งตัวแปร BUFF_API_KEY\n     2. หรือเปิด Ollama (https://ollama.com) ที่เครื่อง แล้วรัน: ollama pull qwen2.5-coder:7b\n   แล้วรัน Commandblock ใหม่ (ดูรายละเอียดใน README.md)",
+            "CommandBlock: ขอโทษครับ ตอนนี้ยังไม่มี AI ต่อ (โหมด offline)\n   วิธีเปิดใช้งาน:\n     1. ใส่ API key: แก้ไฟล์ config.json (api_key) หรือตั้งตัวแปร BUFF_API_KEY\n     2. หรือเปิด Ollama (https://ollama.com) ที่เครื่อง แล้วรัน: ollama pull qwen2.5-coder:7b\n   แล้วรัน CommandBlock ใหม่ (ดูรายละเอียดใน README.md)",
         );
         sink.end_line();
         return;
@@ -410,7 +411,7 @@ pub fn run_turn(
             // เนื้อหาถูกพิมพ์ระหว่าง streaming แล้ว — ถ้าไม่มีเนื้อหาเลย ใช้ผลลัพธ์เครื่องมือล่าสุดแทน
             if resp.content.trim().is_empty() {
                 if let Some(f) = last_tool_result.as_deref() {
-                    sink.note(&format!("[Commandblock] AI ไม่ได้ตอบสรุป แต่ผลลัพธ์ล่าสุดจากเครื่องมือ:\n{f}"));
+                    sink.note(&format!("[CommandBlock] AI ไม่ได้ตอบสรุป แต่ผลลัพธ์ล่าสุดจากเครื่องมือ:\n{f}"));
                     sink.end_line();
                 }
             }
@@ -434,7 +435,7 @@ pub fn run_turn(
                 }
             }
             if looped {
-                sink.note("[Commandblock] AI วนลูปเรียกเครื่องมือเดิมบ่อยเกินไป — ขอสรุปผลล่าสุดแทน");
+                sink.note("[CommandBlock] AI วนลูปเรียกเครื่องมือเดิมบ่อยเกินไป — ขอสรุปผลล่าสุดแทน");
                 final_summary(agent, eff, history, last_tool_result.as_deref(), sink);
                 sink.end_line();
                 return;
@@ -482,7 +483,7 @@ fn final_summary(
             sink.end_line();
             if r.content.trim().is_empty() {
                 if let Some(f) = fallback {
-                    sink.note(&format!("[Commandblock] AI สรุปไม่ได้ แต่ผลลัพธ์ล่าสุดจากเครื่องมือ:\n{f}"));
+                    sink.note(&format!("[CommandBlock] AI สรุปไม่ได้ แต่ผลลัพธ์ล่าสุดจากเครื่องมือ:\n{f}"));
                     sink.end_line();
                 }
             }
@@ -521,7 +522,7 @@ fn mask_key(key: &str) -> String {
 }
 
 pub fn system_prompt() -> String {
-    r#"คุณคือ "Commandblock" ผู้ช่วยพัฒนาโค้ดอัจฉริยะ (AI coding agent) ที่ทำงานผ่านเครื่องมือในเทอร์มินัล คล้ายกับ Codebuff/Claude Code — ผู้ใช้จะขอให้คุณทำงานในโปรเจกต์โค้ดของเขา
+    r#"คุณคือ "CommandBlock" ผู้ช่วยพัฒนาโค้ดอัจฉริยะ (AI coding agent) ที่ทำงานผ่านเครื่องมือในเทอร์มินัล คล้ายกับ Codebuff/Claude Code — ผู้ใช้จะขอให้คุณทำงานในโปรเจกต์โค้ดของเขา
 
 กฎการทำงาน:
 1. ตอบเป็นภาษาไทยเสมอ (โค้ด ชื่อฟังก์ชัน พาธ คำสั่ง และศัพท์เทคนิคคงเป็นภาษาอังกฤษตามธรรมเนียม)
@@ -542,12 +543,12 @@ pub fn system_prompt() -> String {
 
 fn print_main_help() {
     println!(
-        "Commandblock v{VERSION} — ผู้ช่วยพัฒนาโค้ด AI\n\
+        "CommandBlock v{VERSION} — ผู้ช่วยพัฒนาโค้ด AI\n\
          \n\
          วิธีใช้:\n\
          \x20 buff                          เปิด GUI แชท (ค่าเริ่มต้น)\n\
          \x20 buff --cli                    เปิดแชทแบบเทอร์มินัล\n\
-         \x20 buff --connector              เชื่อม Commandblock Web กับเครื่องนี้\n\
+         \x20 buff --connector              เชื่อม CommandBlock Web กับเครื่องนี้\n\
          \x20 buff \"ทำงานให้ฉัน...\"        รันงานครั้งเดียวแล้วจบ (one-shot)\n\
          \x20 buff --help                   ดูวิธีใช้นี้\n\
          \x20 buff --version                ดูเวอร์ชัน\n\
@@ -561,7 +562,7 @@ fn print_help() {
         "คำสั่งในแชท:\n\
          \x20 /help     ดูคำสั่งนี้\n\
          \x20 /model    ดูแบ็กเอนด์/model ที่ใช้อยู่\n\
-         \x20 /plan     ดูแผนงานล่าสุดของ Commandblock\n\
+         \x20 /plan     ดูแผนงานล่าสุดของ CommandBlock\n\
          \x20 /skills   ดูรายการทักษะเฉพาะทางที่โหลดได้\n\
          \x20 /preview  เปิดพรีวิวเว็บครั้งล่าสุดอีกครั้ง\n\
          \x20 /reset    ล้างประวัติการสนทนา เริ่มใหม่\n\

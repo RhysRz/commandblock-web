@@ -4,15 +4,15 @@ const path = require('node:path');
 const test = require('node:test');
 const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
 
-test('uses Commandblock publicly while preserving existing data identifiers', () => {
+test('uses CommandBlock publicly while preserving existing data identifiers', () => {
   const cargo = read('Cargo.toml');
   const ui = read('src', 'ui.html');
   const main = read('src', 'main.rs');
   const start = read('start.bat');
   assert.match(cargo, /^name = "commandblock"$/m);
-  assert.match(ui, /<title>Commandblock —/);
-  assert.match(ui, /<h1>Commandblock /);
-  assert.match(main, /Commandblock v\{VERSION\}/);
+  assert.match(ui, /<title>CommandBlock —/);
+  assert.match(ui, /<h1>CommandBlock /);
+  assert.match(main, /CommandBlock v\{VERSION\}/);
   assert.match(start, /Commandblock\.exe/i);
   assert.match(main, /const SESSION_FILE: &str = "buff_session\.json"/);
   assert.match(read('src', 'config.rs'), /BUFF_API_KEY/);
