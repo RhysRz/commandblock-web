@@ -1,0 +1,30 @@
+name: Release CommandBlock Windows
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'assets/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'build.rs'
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item target\release\commandblock.exe package\Commandblock.exe
+          Copy-Item target\release\commandblock-connector.exe package\commandblock-connector.exe
+          Copy-Item target\release\commandblock-updater.exe package\commandblock-updater.exe
+          Compress-Archive -Path package\* -DestinationPath CommandBlock-Windows-x64.zip
+          (Get-FileHash CommandBlock-Windows-x64.zip -Algorithm SHA256).Hash.ToLower() | Set-Content CommandBlock-Windows-x64.zip.sha256 -NoNewline
+      - env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh release create build-${{ github.sha }} CommandBlock-Windows-x64.zip CommandBlock-Windows-x64.zip.sha256 --title "CommandBlock build ${{ github.sha }}" --generate-notes --latest
