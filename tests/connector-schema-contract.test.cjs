@@ -27,3 +27,12 @@ test('GUI executable starts the dedicated console connector sidecar', () => {
   assert.match(main, /connector::launch_sidecar\(\)/);
   assert.match(sidecar, /commandblock::connector::run\(agent\)/);
 });
+
+test('connector registers the authenticated user and masks the password prompt', () => {
+  const connector = fs.readFileSync(path.join(root, 'src', 'connector.rs'), 'utf8');
+
+  assert.match(connector, /struct ConnectorSession/);
+  assert.match(connector, /get\("user"\).*get\("id"\)/s);
+  assert.match(connector, /"user_id": session\.user_id/);
+  assert.match(connector, /rpassword::prompt_password/);
+});

@@ -8,6 +8,11 @@ use std::time::Duration;
 const SUPABASE_URL: &str = "https://qympivgklmstrnhfaywn.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY: &str = "sb_publishable_UJMuyL3QY8lMEWJKZi3zAQ_NFKZY8TH";
 
+struct ConnectorSession {
+    token: String,
+    user_id: String,
+}
+
 /// เปิด Connector แบบ console แยกจากแอป GUI เพื่อให้ Windows ส่ง stdin/stdout ได้ถูกต้อง
 pub fn launch_sidecar() -> Result<(), String> {
     let current = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -33,27 +38,28 @@ pub fn run(agent: ureq::Agent) -> Result<(), String> {
     println!("CommandBlock Desktop Connector");
     println!("ลงชื่อเข้าใช้บัญชีเดียวกับ CommandBlock Web (session นี้จะไม่บันทึกรหัสผ่าน)");
     let email = prompt("อีเมล: ")?;
-    let password = prompt("รหัสผ่าน: ")?;
-    let token = sign_in(&agent, &email, &password)?;
+    let password = rpassword::prompt_password("รหัสผ่าน: ").map_err(|e| e.to_string())?;
+    if password.trim().is_empty() { return Err("ห้ามเว้นว่าง".to_string()); }
+    let session = sign_in(&agent, &email, &password)?;
     let mut root = rfd::FileDialog::new().set_title("เลือกโฟลเดอร์สำหรับ CommandBlock Web").pick_folder()
         .ok_or_else(|| "ยกเลิกการเลือกโฟลเดอร์".to_string())?;
     let name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string());
-    let device = create_device(&agent, &token, &name, root_name(&root))?;
+    let device = create_device(&agent, &session, &name, root_name(&root))?;
     println!("✓ เชื่อมต่อ {} แล้ว — อนุญาตเฉพาะ {}", name, root.display());
     println!("เปิดหน้านี้ค้างไว้ แล้วกลับไปกด Files หรือ Terminal บน CommandBlock Web (Ctrl+C เพื่อหยุด)");
 
     loop {
-        heartbeat(&agent, &token, &device)?;
-        if let Some(command) = next_command(&agent, &token, &device)? {
+        heartbeat(&agent, &session.token, &device)?;
+        if let Some(command) = next_command(&agent, &session.token, &device)? {
             let id = command.get("id").and_then(Value::as_str).ok_or_else(|| "คำสั่ง Connector ไม่มี id".to_string())?;
-            mark_running(&agent, &token, id)?;
+            mark_running(&agent, &session.token, id)?;
             let action = command.get("action").and_then(Value::as_str).unwrap_or("");
             let payload = command.get("payload").unwrap_or(&Value::Null);
             let result = if action == "pick_folder" {
                 match rfd::FileDialog::new().set_title("เปลี่ยนโฟลเดอร์สำหรับ CommandBlock Web").pick_folder() {
                     Some(next_root) => {
                         root = next_root;
-                        update_device_root(&agent, &token, &device, root_name(&root))?;
+                        update_device_root(&agent, &session.token, &device, root_name(&root))?;
                         Ok(json!({"ok": true, "path": root_name(&root), "root": root_name(&root), "files": count_files(&root)}))
                     }
                     None => Ok(json!({"ok": false, "cancelled": true})),
@@ -62,8 +68,8 @@ pub fn run(agent: ureq::Agent) -> Result<(), String> {
                 execute(action, payload, &root)
             };
             match result {
-                Ok(value) => finish(&agent, &token, id, "completed", Some(value), None)?,
-                Err(error) => finish(&agent, &token, id, "failed", None, Some(error))?,
+                Ok(value) => finish(&agent, &session.token, id, "completed", Some(value), None)?,
+                Err(error) => finish(&agent, &session.token, id, "failed", None, Some(error))?,
             }
         }
         thread::sleep(Duration::from_secs(1));
@@ -79,23 +85,26 @@ fn prompt(label: &str) -> Result<String, String> {
     if value.is_empty() { Err("ห้ามเว้นว่าง".to_string()) } else { Ok(value) }
 }
 
-fn sign_in(agent: &ureq::Agent, email: &str, password: &str) -> Result<String, String> {
+fn sign_in(agent: &ureq::Agent, email: &str, password: &str) -> Result<ConnectorSession, String> {
     let response: Value = agent.post(&format!("{SUPABASE_URL}/auth/v1/token?grant_type=password"))
         .set("apikey", SUPABASE_PUBLISHABLE_KEY).set("Content-Type", "application/json")
         .send_json(json!({"email": email, "password": password}))
         .map_err(|_| "เข้าสู่ระบบ Connector ไม่สำเร็จ".to_string())?.into_json().map_err(|_| "อ่าน session Connector ไม่สำเร็จ".to_string())?;
-    response.get("access_token").and_then(Value::as_str).map(str::to_string)
-        .ok_or_else(|| "บัญชีหรือรหัสผ่านไม่ถูกต้อง".to_string())
+    let token = response.get("access_token").and_then(Value::as_str).map(str::to_string)
+        .ok_or_else(|| "บัญชีหรือรหัสผ่านไม่ถูกต้อง".to_string())?;
+    let user_id = response.get("user").and_then(|user| user.get("id")).and_then(Value::as_str).map(str::to_string)
+        .ok_or_else(|| "อ่านข้อมูลผู้ใช้ Connector ไม่สำเร็จ".to_string())?;
+    Ok(ConnectorSession { token, user_id })
 }
 
 fn auth<'a>(request: ureq::Request, token: &'a str) -> ureq::Request {
     request.set("apikey", SUPABASE_PUBLISHABLE_KEY).set("Authorization", &format!("Bearer {token}")).set("Content-Type", "application/json")
 }
 
-fn create_device(agent: &ureq::Agent, token: &str, name: &str, root_name: String) -> Result<String, String> {
-    let rows: Vec<Value> = auth(agent.post(&format!("{SUPABASE_URL}/rest/v1/connector_devices")), token)
+fn create_device(agent: &ureq::Agent, session: &ConnectorSession, name: &str, root_name: String) -> Result<String, String> {
+    let rows: Vec<Value> = auth(agent.post(&format!("{SUPABASE_URL}/rest/v1/connector_devices")), &session.token)
         .set("Prefer", "return=representation")
-        .send_json(json!({"name": name, "root_name": root_name}))
+        .send_json(json!({"user_id": session.user_id, "name": name, "root_name": root_name}))
         .map_err(|_| "ลงทะเบียน Desktop Connector ไม่สำเร็จ".to_string())?.into_json().map_err(|_| "อ่านข้อมูล Desktop Connector ไม่สำเร็จ".to_string())?;
     rows.first().and_then(|row| row.get("id")).and_then(Value::as_str).map(str::to_string)
         .ok_or_else(|| "ไม่ได้ device id จาก Supabase".to_string())
