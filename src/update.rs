@@ -127,6 +127,7 @@ pub fn launch_staged_update() -> Result<(), String> {
     let stage = updates_dir().join("pending");
     if !stage.join("Commandblock.exe").is_file()
         || !stage.join("commandblock-connector.exe").is_file()
+        || !stage.join("commandblock-updater.exe").is_file()
     {
         return Err("ยังไม่มีไฟล์อัปเดตที่ตรวจสอบแล้ว".to_string());
     }
@@ -203,7 +204,7 @@ fn stage_release(release: &Release) -> Result<(), String> {
     }
     std::fs::create_dir_all(&stage).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| e.to_string())?;
-    for name in ["Commandblock.exe", "commandblock-connector.exe"] {
+    for name in ["Commandblock.exe", "commandblock-connector.exe", "commandblock-updater.exe"] {
         let mut entry = zip.by_name(name).map_err(|_| format!("แพ็กเกจไม่มี {name}"))?;
         let mut out = std::fs::File::create(stage.join(name)).map_err(|e| e.to_string())?;
         std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;

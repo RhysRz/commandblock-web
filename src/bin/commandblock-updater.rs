@@ -6,27 +6,16 @@ fn main() {
     let source = std::path::PathBuf::from(&args[2]);
     let target = std::path::PathBuf::from(&args[3]);
     let pid: u32 = args[4].parse().unwrap_or_default();
-    for _ in 0..30 {
-        if !process_exists(pid) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(200));
+    let script = std::env::temp_dir().join(format!("commandblock-update-{pid}.cmd"));
+    let quote = |path: &std::path::Path| format!("\"{}\"", path.display());
+    let body = format!(
+        "@echo off\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" /NH | findstr /C:\" {pid} \" >nul\r\nif not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)\r\ntimeout /t 1 /nobreak >nul\r\ncopy /Y {} {} >nul\r\ncopy /Y {} {} >nul\r\ncopy /Y {} {} >nul\r\nstart \"\" {}\r\ndel \"%~f0\"\r\n",
+        quote(&source.join("Commandblock.exe")), quote(&target.join("Commandblock.exe")),
+        quote(&source.join("commandblock-connector.exe")), quote(&target.join("commandblock-connector.exe")),
+        quote(&source.join("commandblock-updater.exe")), quote(&target.join("commandblock-updater.exe")),
+        quote(&target.join("Commandblock.exe")),
+    );
+    if std::fs::write(&script, body).is_ok() {
+        let _ = std::process::Command::new("cmd.exe").args(["/C", script.to_string_lossy().as_ref()]).spawn();
     }
-    for file in ["Commandblock.exe", "commandblock-connector.exe"] {
-        let _ = std::fs::copy(source.join(file), target.join(file));
-    }
-    let _ = std::process::Command::new(target.join("Commandblock.exe")).spawn();
-}
-
-#[cfg(windows)]
-fn process_exists(pid: u32) -> bool {
-    std::process::Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
-        .unwrap_or(false)
-}
-#[cfg(not(windows))]
-fn process_exists(_: u32) -> bool {
-    false
 }
