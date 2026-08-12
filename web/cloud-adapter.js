@@ -128,15 +128,54 @@
   const agentSystem = 'คุณคือ CommandBlock ผู้ช่วยพัฒนาโค้ด AI ทำงานบนคอมพิวเตอร์ของผู้ใช้ผ่าน Desktop Connector ' +
     'คุณสามารถรันคำสั่ง อ่านไฟล์ และดูรายการไฟล์เพื่อทำงานให้สำเร็จ — วางแผนเป็นขั้นตอน ใช้เครื่องมือทีละอย่าง ' +
     'และสรุปผลงานเป็นภาษาไทยสั้นๆ กระชับ ถ้าเครื่องมือล้มเหลวให้ลองวิธีอื่นหรือแจ้งผู้ใช้';
-  async function agentCall(apiKey, messages) {
+  async function agentCall(apiKey, messages, onDelta) {
+    // stream: true — อ่าน SSE ทีละ chunk แล้วเรียก onDelta(ev, payload) แบบเรียลไทม์
     const response = await originalFetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, messages, tools: AGENT_TOOLS, tool_choice: 'auto', max_tokens: 2048 }),
+      body: JSON.stringify({ model: MODEL, messages, tools: AGENT_TOOLS, tool_choice: 'auto', max_tokens: 2048, stream: true }),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error?.message || 'โมเดลตอบกลับไม่สำเร็จ');
-    return data;
+    if (!response.ok) {
+      let message = 'โมเดลตอบกลับไม่สำเร็จ';
+      try { message = (await response.json())?.error?.message || message; } catch { /* ignore */ }
+      throw new Error(message);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let content = '';
+    let toolCalls = [];
+    let usage = {};
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') continue;
+        let chunk;
+        try { chunk = JSON.parse(data); } catch { continue; }
+        const choice = chunk.choices?.[0];
+        const delta = choice?.delta || {};
+        if (delta.reasoning_content) onDelta('think', { t: delta.reasoning_content });
+        if (delta.content) { content += delta.content; onDelta('content', { t: delta.content }); }
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const index = tc.index || 0;
+            toolCalls[index] = toolCalls[index] || { id: '', type: 'function', function: { name: '', arguments: '' } };
+            if (tc.id) toolCalls[index].id += tc.id;
+            if (tc.function?.name) toolCalls[index].function.name += tc.function.name;
+            if (tc.function?.arguments) toolCalls[index].function.arguments += tc.function.arguments;
+          }
+        }
+        if (chunk.usage) usage = chunk.usage;
+      }
+    }
+    return { content, tool_calls: toolCalls.filter((c) => c.id || c.function?.name), usage };
   }
   async function agentTool(tool) {
     const args = (() => { try { return JSON.parse(tool.function?.arguments || '{}'); } catch { return {}; } })();
@@ -147,52 +186,64 @@
     return { error: 'ไม่รู้จักเครื่องมือ ' + name };
   }
   async function cloudChat(init) {
-    try {
-      const session = await currentSession();
-      const { message } = requestBody(init);
-      if (!message?.trim()) return sse([event('note', { t: 'กรุณาพิมพ์ข้อความก่อนส่ง' })], 400);
-      const apiKey = sessionKey() || (await askForKey());
-      if (!apiKey) return sse([event('note', { t: 'ต้องใส่ DeepSeek API key ก่อนใช้งาน Cloud chat' })], 400);
-      const id = await saveMessage(session, 'user', message);
-      const messages = await conversationMessages(session, id);
-      messages.unshift({ role: 'system', content: agentSystem });
-      const events = [];
-      let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-      let steps = 0;
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        steps += 1;
-        if (steps > 12) { events.push(event('note', { t: '⚠️ งานยังไม่เสร็จใน 12 ขั้นตอน — พยายามต่อไปหรือแบ่งงานเป็นชิ้นเล็กๆ' })); break; }
-        const data = await agentCall(apiKey, messages);
-        const choice = data.choices?.[0]?.message || {};
-        const usage = data.usage || {};
-        totalUsage.prompt_tokens += Number(usage.prompt_tokens || 0);
-        totalUsage.completion_tokens += Number(usage.completion_tokens || 0);
-        totalUsage.total_tokens += Number(usage.total_tokens || 0);
-        if (choice.content) events.push(event('content', { t: choice.content }));
-        const calls = choice.tool_calls || [];
-        if (!calls.length) break;
-        messages.push({ role: 'assistant', content: choice.content || '', tool_calls: calls });
-        for (const call of calls) {
-          const name = call.function?.name || '';
-          let args = '{}';
-          try { args = JSON.stringify(JSON.parse(call.function?.arguments || '{}')); } catch { /* ignore */ }
-          events.push(event('tool', { name, args }));
-          let result;
-          try {
-            result = await agentTool(call);
-          } catch (error) {
-            result = { error: error.message || 'เรียกเครื่องมือไม่สำเร็จ' };
+    // คืน SSE stream — push event ทีละตัว (think/content/tool) แบบเรียลไทม์
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const push = (name, payload) => {
+          try { controller.enqueue(encoder.encode(event(name, payload))); } catch { /* stream ปิดแล้ว */ }
+        };
+        try {
+          const session = await currentSession();
+          const { message } = requestBody(init);
+          if (!message?.trim()) { push('note', { t: 'กรุณาพิมพ์ข้อความก่อนส่ง' }); controller.close(); return; }
+          const apiKey = sessionKey() || (await askForKey());
+          if (!apiKey) { push('note', { t: 'ต้องใส่ DeepSeek API key ก่อนใช้งาน Cloud chat' }); controller.close(); return; }
+          const id = await saveMessage(session, 'user', message);
+          const messages = await conversationMessages(session, id);
+          messages.unshift({ role: 'system', content: await agentSystemWithSkills() });
+          let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+          let lastContent = '';
+          let steps = 0;
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
+            steps += 1;
+            if (steps > 12) { push('note', { t: '⚠️ งานยังไม่เสร็จใน 12 ขั้นตอน — พยายามต่อไปหรือแบ่งงานเป็นชิ้นเล็กๆ' }); break; }
+            const data = await agentCall(apiKey, messages, (name, payload) => {
+              if (name === 'content') lastContent += payload.t || '';
+              push(name, payload);
+            });
+            const usage = data.usage || {};
+            totalUsage.prompt_tokens += Number(usage.prompt_tokens || 0);
+            totalUsage.completion_tokens += Number(usage.completion_tokens || 0);
+            totalUsage.total_tokens += Number(usage.total_tokens || 0);
+            const calls = data.tool_calls || [];
+            if (!calls.length) break;
+            messages.push({ role: 'assistant', content: data.content || '', tool_calls: calls });
+            for (const call of calls) {
+              const name = call.function?.name || '';
+              let args = '{}';
+              try { args = JSON.stringify(JSON.parse(call.function?.arguments || '{}')); } catch { /* ignore */ }
+              push('tool', { name, args });
+              let result;
+              try {
+                result = await agentTool(call);
+              } catch (error) {
+                result = { error: error.message || 'เรียกเครื่องมือไม่สำเร็จ' };
+              }
+              messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+            }
           }
-          messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+          if (lastContent) await saveMessage(session, 'assistant', lastContent);
+          push('usage', totalUsage);
+        } catch (error) {
+          push('note', { t: error.message || 'ไม่สามารถเชื่อมต่อ Cloud chat ได้' });
+        } finally {
+          try { controller.close(); } catch { /* ignore */ }
         }
-      }
-      const content = (events.filter((e) => e.startsWith('event: content')).pop() || '').split('\n')[1]?.slice(6) || '';
-      if (content) await saveMessage(session, 'assistant', content);
-      return sse(events.concat([event('usage', totalUsage)]));
-    } catch (error) {
-      return sse([event('note', { t: error.message || 'ไม่สามารถเชื่อมต่อ Cloud chat ได้' })], 400);
-    }
+      },
+    });
+    return new Response(stream, { headers: { 'content-type': 'text/event-stream; charset=utf-8' } });
   }
   async function cloudHistory() {
     try {
@@ -308,6 +359,39 @@
     try { return json(await requestConnector(action, payload)); }
     catch (error) { return json(fallback(error.message || connectorMessage), 503); }
   }
+  const SKILLS_KEY = 'commandblock.selected-skills';
+  function selectedSkills() {
+    try { return JSON.parse(localStorage.getItem(SKILLS_KEY) || '[]'); } catch { return []; }
+  }
+  // ใส่ SKILL.md ของสกิลที่เลือก ต่อท้าย system prompt (มีผลจริง เหมือน exe)
+  async function agentSystemWithSkills() {
+    let system = agentSystem;
+    const names = selectedSkills();
+    if (names.length) {
+      const loaded = [];
+      for (const name of names) {
+        try {
+          const skill = await requestConnector('read_skill', { name });
+          if (skill && skill.content) loaded.push(`### ทักษะ: ${name}\n${String(skill.content).slice(0, 6000)}`);
+        } catch { /* ข้ามทักษะที่อ่านไม่ได้ */ }
+      }
+      if (loaded.length) system += '\n\n## ทักษะที่เปิดใช้งาน (Preloaded skills) — ปฏิบัติตามคำแนะนำเหล่านี้:\n' + loaded.join('\n\n');
+    }
+    return system;
+  }
+  async function cloudSettings(init) {
+    if ((init?.method || 'GET').toUpperCase() === 'POST') {
+      const { skills } = requestBody(init);
+      if (Array.isArray(skills)) localStorage.setItem(SKILLS_KEY, JSON.stringify(skills));
+      return json({ saved: true });
+    }
+    try {
+      const result = await requestConnector('skills', {});
+      return json({ startup_script: '', skills: selectedSkills(), available_skills: result.skills || [], path: 'Cloud session', requires_connector: false });
+    } catch (error) {
+      return json({ startup_script: '', skills: selectedSkills(), available_skills: [], path: connectorMessage, requires_connector: true, message: error.message || connectorMessage });
+    }
+  }
   function unsupported(path) {
     const activity = [`⚠️ ${connectorMessage}`];
     if (path === '/api/files') return json({ files: [], requires_connector: true, message: connectorMessage });
@@ -316,7 +400,6 @@
     if (path === '/api/exec') return json({ output: connectorMessage, requires_connector: true });
     if (path === '/api/read') return json({ content: connectorMessage, requires_connector: true });
     if (path === '/api/pick-folder') return json({ ok: false, requires_connector: true, message: connectorMessage });
-    if (path === '/api/settings') return json({ startup_script: '', skills: [], available_skills: [], path: connectorMessage, requires_connector: true });
     if (path === '/api/startup-log') return json({ log: [], requires_connector: true });
     return json({ ok: false, requires_connector: true, message: connectorMessage });
   }
@@ -386,7 +469,8 @@
     }
     if (path === '/api/pick-folder') return connectorResult('pick_folder', {}, (message) => ({ ok: false, requires_connector: true, message }));
     if (path === '/api/exec') return connectorResult('exec', requestBody(init), (message) => ({ output: message, requires_connector: true }));
-    if (['/api/settings', '/api/startup-log'].includes(path)) return unsupported(path);
+    if (path === '/api/settings') return cloudSettings(init);
+    if (path === '/api/startup-log') return unsupported(path);
     if (path === '/api/update') {
       if ((init?.method || 'GET').toUpperCase() === 'POST') return json({ ok: true, state: 'up_to_date', note: 'เว็บอัปเดตอัตโนมัติจาก GitHub Pages — ไม่ต้องอัปเดตเอง' });
       return json({ state: 'up_to_date', latest: 'web', note: 'เว็บอัปเดตอัตโนมัติจาก GitHub Pages' });

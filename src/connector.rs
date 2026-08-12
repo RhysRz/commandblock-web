@@ -82,12 +82,13 @@ fn approve_exec(auto_approve: bool, command: &str, root: &Path) -> Result<(), St
     match read_line_timeout(Duration::from_secs(60)) {
         Some(answer) if answer == "yes" => Ok(()),
         Some(_) => Err("ผู้ใช้ไม่อนุมัติคำสั่งบน Desktop Connector".to_string()),
-        None => Err("หมดเวลา 60 วินาที — ไม่อนุมัติคำสั่ง (ใช้ --auto-approve เพื่อรันได้เลย)".to_string()),
+        None => Err("หมดเวลา 60 วินาที — ไม่อนุมัติคำสั่ง (connector ปกติจะ auto-approve อยู่แล้ว)".to_string()),
     }
 }
 
 pub fn run(agent: ureq::Agent) -> Result<(), String> {
-    let auto_approve = std::env::args().any(|arg| arg == "--auto-approve");
+    // Connector = auto-approve เสมอ (Remote PC มีระบบยืนยันของตัวเอง) — ใส่ --no-auto-approve เพื่อกลับไปโหมดถาม
+    let auto_approve = !std::env::args().any(|arg| arg == "--no-auto-approve");
     println!("CommandBlock Desktop Connector{}", if auto_approve { " (auto-approve — รันคำสั่งจากเว็บได้เลยโดยไม่ถาม)" } else { " (exec ต้องพิมพ์ yes อนุมัติที่หน้าต่างนี้)" });
     let session = match restore_session(&agent) {
         Ok(Some(session)) => {
@@ -325,6 +326,14 @@ fn finish(
 
 fn execute(action: &str, payload: &Value, root: &Path, auto_approve: bool) -> Result<Value, String> {
     match action {
+        "skills" => Ok(json!({"skills": crate::tools::list_skills_structured()})),
+        "read_skill" => {
+            let name = payload.get("name").and_then(Value::as_str).unwrap_or("").trim();
+            match crate::tools::load_skill_content(name) {
+                Some(content) => Ok(json!({"name": name, "content": content})),
+                None => Err(format!("ไม่พบทักษะ {name}")),
+            }
+        }
         "files" => {
             let requested = payload.get("path").and_then(Value::as_str).unwrap_or("");
             if requested.trim().is_empty() {
