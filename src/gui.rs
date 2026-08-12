@@ -5,7 +5,7 @@
 //! - GET  /api/state   สถานะแบ็กเอนด์/โมเดล/จำนวนข้อความ
 //! - POST /api/chat    ส่งข้อความ → สตรีมคำตอบกลับเป็น SSE (content/tool/note/done)
 
-use crate::{config, tools, TurnSink};
+use crate::{config, connector, remote, tools, TurnSink};
 use image::GenericImageView;
 use serde_json::{json, Value};
 use std::io::{BufWriter, Read, Write};
@@ -559,13 +559,40 @@ fn build_icon() -> Option<winit::window::Icon> {
     winit::window::Icon::from_rgba(image.to_rgba8().into_raw(), width, height).ok()
 }
 
+/// ข้อความแสดงผลและ allowlist ของปุ่ม Quick action ใน Terminal
+fn desktop_mode_name(mode: &str) -> Result<&'static str, String> {
+    match mode {
+        "connector" => Ok("Desktop Connector"),
+        "remote" => Ok("Remote PC"),
+        _ => Err("โหมด Desktop ไม่ถูกต้อง".to_string()),
+    }
+}
+
+/// เปิด sidecar เทียบเท่ากับคำสั่ง Commandblock.exe --connector / --remote
+fn launch_desktop_mode(mode: &str) -> Result<&'static str, String> {
+    let name = desktop_mode_name(mode)?;
+    match mode {
+        "connector" => connector::launch_sidecar()?,
+        "remote" => remote::launch_sidecar()?,
+        _ => unreachable!("desktop_mode_name already rejected this mode"),
+    }
+    Ok(name)
+}
+
 #[cfg(test)]
 mod icon_tests {
-    use super::build_icon;
+    use super::{build_icon, desktop_mode_name};
 
     #[test]
     fn embeds_a_valid_command_block_window_icon() {
         assert!(build_icon().is_some());
+    }
+
+    #[test]
+    fn desktop_launcher_accepts_only_connector_and_remote() {
+        assert_eq!(desktop_mode_name("connector").unwrap(), "Desktop Connector");
+        assert_eq!(desktop_mode_name("remote").unwrap(), "Remote PC");
+        assert!(desktop_mode_name("cmd /c whoami").is_err());
     }
 }
 
@@ -968,6 +995,26 @@ fn handle(
                 "application/json",
                 json!({ "output": output }).to_string().as_bytes(),
             );
+        }
+        ("POST", "/api/desktop-mode") => {
+            let mode = serde_json::from_str::<Value>(&body_str)
+                .ok()
+                .and_then(|value| value.get("mode").and_then(Value::as_str).map(str::to_owned))
+                .unwrap_or_default();
+            match launch_desktop_mode(&mode) {
+                Ok(name) => respond(
+                    &mut out,
+                    200,
+                    "application/json",
+                    json!({"ok": true, "message": format!("เปิด {name} แล้ว — ลงชื่อเข้าใช้ในหน้าต่างที่เปิดขึ้น")}).to_string().as_bytes(),
+                ),
+                Err(error) => respond(
+                    &mut out,
+                    400,
+                    "application/json",
+                    json!({"ok": false, "error": error}).to_string().as_bytes(),
+                ),
+            }
         }
         ("POST", "/api/chat") => handle_chat(&mut out, agent, eff, &body_str, &shared),
         _ => respond(&mut out, 404, "text/plain", b"404 Not Found"),

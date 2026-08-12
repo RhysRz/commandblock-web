@@ -408,6 +408,12 @@
   .term-head .dots { display: flex; gap: 5px; }
   .term-head .dots i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .term-head .dots i:nth-child(1){background:#dfc6ff}.term-head .dots i:nth-child(2){background:#c7a7ff}.term-head .dots i:nth-child(3){background:#b899ff}
+  .term-actions { margin-left: auto; display: flex; gap: 6px; }
+  .term-action {
+    min-height: 28px; padding: 4px 9px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--panel); color: var(--text); font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .term-action:hover { border-color: var(--accent); background: var(--panel2); }
   .term-out { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
   .term-in { display: flex; align-items: center; gap: 6px; padding: 6px 12px 10px; border-top: 1px solid var(--border); }
   .term-in .prompt { color: var(--accent2); font-size: 12.5px; white-space: nowrap; }
@@ -872,6 +878,10 @@
         <div class="term-head">
           <span class="dots"><i></i><i></i><i></i></span>
           <span>Thread shell</span>
+          <span class="term-actions">
+            <button class="term-action" id="openConnector" type="button" title="เปิดโหมดเข้าถึง Files และ Terminal จากเว็บ">🔗 Desktop Connector</button>
+            <button class="term-action" id="openRemote" type="button" title="เปิดโหมดดูจอและควบคุมเครื่องจากเว็บหรือมือถือ">🖥 Remote PC</button>
+          </span>
         </div>
         <div class="term-out" id="termOut"></div>
         <div class="term-in">
@@ -1313,6 +1323,17 @@ const termOut=document.getElementById("termOut");
 const termIn=document.getElementById("termIn");
 termOut.textContent = "Microsoft Windows [Version 10.0.26200.8875]\n(c) Microsoft Corporation. All rights reserved.\n\nC:\\Codex>";
 function termPrint(s){ termOut.textContent += "\n" + s; termOut.scrollTop=termOut.scrollHeight; }
+async function launchDesktopMode(mode){
+  const label = mode === "remote" ? "Remote PC" : "Desktop Connector";
+  termPrint("C:\\Codex> เปิด " + label + "…");
+  try{
+    const res = await fetch("/api/desktop-mode", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode})});
+    const j = await res.json();
+    termPrint(j.message || ("[เกิดข้อผิดพลาด] " + (j.error || "เปิดไม่สำเร็จ")));
+  }catch(err){ termPrint("[เกิดข้อผิดพลาด] " + err); }
+}
+document.getElementById("openConnector").addEventListener("click",()=>launchDesktopMode("connector"));
+document.getElementById("openRemote").addEventListener("click",()=>launchDesktopMode("remote"));
 termIn.addEventListener("keydown",async e=>{
   if(e.key!=="Enter") return;
   const cmd=termIn.value; termIn.value="";
