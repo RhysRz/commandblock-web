@@ -12,3 +12,9 @@ test('Remote approval uses a local Credential Manager secret and never exposes i
   assert.match(web, /cb-remote-pin/);
   assert.doesNotMatch(web, /device_secret/);
 });
+
+test('Remote PC explains when a network blocks direct P2P connectivity', () => {
+  const web = fs.readFileSync(path.join(__dirname, '..', 'web', 'cloud-adapter.js'), 'utf8');
+  assert.match(web, /เครือข่ายนี้อาจบล็อก P2P/);
+  assert.match(web, /TURN relay/);
+});

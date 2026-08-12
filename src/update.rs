@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 const RELEASE_URL: &str = "https://api.github.com/repos/RhysRz/commandblock-web/releases/latest";
 const PACKAGE: &str = "CommandBlock-Windows-x64.zip";
@@ -25,6 +26,7 @@ enum UpdateStatus {
         tag: String,
         downloaded: u64,
         total: Option<u64>,
+        retry: u8,
     },
     Ready {
         tag: String,
@@ -76,6 +78,7 @@ pub fn download_available_release_async() -> Result<(), String> {
         tag: release.tag.clone(),
         downloaded: 0,
         total: release.package_size,
+        retry: 0,
     });
     std::thread::spawn(move || match stage_release(&release) {
         Ok(()) => set_status(UpdateStatus::Ready { tag: release.tag }),
@@ -101,12 +104,14 @@ pub fn status_json() -> Value {
             tag,
             downloaded,
             total,
+            retry,
         } => json!({
             "state": "downloading",
             "tag": tag,
             "downloaded": downloaded,
             "total": total,
             "percent": progress_percent(*downloaded, *total),
+            "retry": retry,
         }),
         UpdateStatus::Ready { tag } => json!({"state": "ready", "tag": tag}),
         UpdateStatus::Error(message) => json!({"state": "error", "message": message}),
@@ -214,16 +219,53 @@ fn stage_release(release: &Release) -> Result<(), String> {
 }
 
 fn read_package_with_progress(release: &Release) -> Result<Vec<u8>, String> {
-    let response = ureq::get(&release.package_url)
-        .set("User-Agent", "CommandBlock-Updater")
-        .call()
-        .map_err(|e| e.to_string())?;
-    let total = response
-        .header("Content-Length")
-        .and_then(|value| value.parse::<u64>().ok())
-        .or(release.package_size);
-    let mut reader = response.into_reader();
     let mut out = Vec::new();
+    let mut total = release.package_size;
+    let mut last_error = String::new();
+    for attempt in 0..3 {
+        match read_package_attempt(release, &mut out, &mut total, attempt) {
+            Ok(()) => return Ok(out),
+            Err(error) => {
+                last_error = error;
+                if attempt == 2 {
+                    break;
+                }
+                set_status(UpdateStatus::Downloading {
+                    tag: release.tag.clone(),
+                    downloaded: out.len() as u64,
+                    total,
+                    retry: attempt + 1,
+                });
+                std::thread::sleep(retry_delay(attempt));
+            }
+        }
+    }
+    Err(format!(
+        "ดาวน์โหลดอัปเดตไม่สำเร็จหลังลองใหม่ 3 ครั้ง: {last_error}"
+    ))
+}
+
+fn read_package_attempt(
+    release: &Release,
+    out: &mut Vec<u8>,
+    total: &mut Option<u64>,
+    retry: u8,
+) -> Result<(), String> {
+    let mut request = ureq::get(&release.package_url).set("User-Agent", "CommandBlock-Updater");
+    if !out.is_empty() {
+        request = request.set("Range", &format!("bytes={}-", out.len()));
+    }
+    let response = request.call().map_err(|e| e.to_string())?;
+    if !out.is_empty() && response.status() == 200 {
+        // CDN ไม่รองรับ Range: เริ่มใหม่แทนการต่อไฟล์ที่ซ้ำกัน
+        out.clear();
+    }
+    *total = release.package_size.or_else(|| {
+        response
+            .header("Content-Length")
+            .and_then(|value| value.parse::<u64>().ok())
+    });
+    let mut reader = response.into_reader();
     let mut buffer = [0u8; 32 * 1024];
     loop {
         let count = reader.read(&mut buffer).map_err(|e| e.to_string())?;
@@ -234,10 +276,15 @@ fn read_package_with_progress(release: &Release) -> Result<Vec<u8>, String> {
         set_status(UpdateStatus::Downloading {
             tag: release.tag.clone(),
             downloaded: out.len() as u64,
-            total,
+            total: *total,
+            retry,
         });
     }
-    Ok(out)
+    Ok(())
+}
+
+fn retry_delay(attempt: u8) -> Duration {
+    Duration::from_secs(u64::from(attempt) + 1)
 }
 
 fn read_bytes(url: &str) -> Result<Vec<u8>, String> {

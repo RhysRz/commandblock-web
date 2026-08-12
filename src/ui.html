@@ -1023,7 +1023,9 @@ function renderUpdate(s){
   if (s.state === "available") updateText.textContent = "มี CommandBlock รุ่นใหม่พร้อมให้ดาวน์โหลด";
   if (s.state === "downloading") {
     const detail = Number.isFinite(s.total) ? " · " + updateSize(s.downloaded || 0) + " / " + updateSize(s.total) : "";
-    updateText.textContent = "กำลังดาวน์โหลดอัปเดต" + (Number.isFinite(s.percent) ? " " + s.percent + "%" : "") + detail;
+    const retry = Number(s.retry || 0);
+    const retryText = retry > 0 ? " · กำลังลองใหม่ครั้ง " + (retry + 1) + "/3" : "";
+    updateText.textContent = "กำลังดาวน์โหลดอัปเดต" + (Number.isFinite(s.percent) ? " " + s.percent + "%" : "") + detail + retryText;
     updateProgressFill.style.width = Number.isFinite(s.percent) ? s.percent + "%" : "";
   }
   if (s.state === "ready") updateText.textContent = "ดาวน์โหลดอัปเดตแล้ว — ติดตั้งได้ทันที";
