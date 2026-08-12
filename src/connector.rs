@@ -48,8 +48,47 @@ pub fn safe_child(root: &Path, requested: &str) -> Result<PathBuf, String> {
     Ok(root.join(relative))
 }
 
+/// อ่านหนึ่งบรรทัดจาก stdin พร้อม timeout (ไม่ block ทั้งคิว)
+fn read_line_timeout(timeout: Duration) -> Option<String> {
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let handle = thread::spawn(move || {
+        let mut value = String::new();
+        if io::stdin().read_line(&mut value).is_ok() {
+            let _ = tx.send(value.trim().to_string());
+        }
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(value) => {
+            let _ = handle.join();
+            Some(value)
+        }
+        Err(_) => {
+            // ไม่ตอบทัน — ปล่อย thread ไว้ ไม่รอ (stdin ยังเปิดอยู่)
+            None
+        }
+    }
+}
+
+/// รออนุมัติคำสั่ง exec — ผ่านทันทีถ้า auto_approve, ถามก่อนถ้าไม่
+fn approve_exec(auto_approve: bool, command: &str, root: &Path) -> Result<(), String> {
+    if auto_approve {
+        return Ok(());
+    }
+    println!(
+        "\n⚠️ เว็บขอรันคำสั่งใน {}:\n  {command}\nพิมพ์ yes เพื่ออนุมัติ (มีเวลา 60 วินาที):",
+        root.display()
+    );
+    io::stdout().flush().map_err(|e| e.to_string())?;
+    match read_line_timeout(Duration::from_secs(60)) {
+        Some(answer) if answer == "yes" => Ok(()),
+        Some(_) => Err("ผู้ใช้ไม่อนุมัติคำสั่งบน Desktop Connector".to_string()),
+        None => Err("หมดเวลา 60 วินาที — ไม่อนุมัติคำสั่ง (ใช้ --auto-approve เพื่อรันได้เลย)".to_string()),
+    }
+}
+
 pub fn run(agent: ureq::Agent) -> Result<(), String> {
-    println!("CommandBlock Desktop Connector");
+    let auto_approve = std::env::args().any(|arg| arg == "--auto-approve");
+    println!("CommandBlock Desktop Connector{}", if auto_approve { " (auto-approve — รันคำสั่งจากเว็บได้เลยโดยไม่ถาม)" } else { " (exec ต้องพิมพ์ yes อนุมัติที่หน้าต่างนี้)" });
     let session = match restore_session(&agent) {
         Ok(Some(session)) => {
             println!("ใช้ session ที่บันทึกไว้ใน Windows Credential Manager");
@@ -101,7 +140,7 @@ pub fn run(agent: ureq::Agent) -> Result<(), String> {
                     None => Ok(json!({"ok": false, "cancelled": true})),
                 }
             } else {
-                execute(action, payload, &root)
+                execute(action, payload, &root, auto_approve)
             };
             match result {
                 Ok(value) => finish(&agent, &session.token, id, "completed", Some(value), None)?,
@@ -284,9 +323,20 @@ fn finish(
     Ok(())
 }
 
-fn execute(action: &str, payload: &Value, root: &Path) -> Result<Value, String> {
+fn execute(action: &str, payload: &Value, root: &Path, auto_approve: bool) -> Result<Value, String> {
     match action {
-        "files" => Ok(json!({"files": list_files(root)})),
+        "files" => {
+            let requested = payload.get("path").and_then(Value::as_str).unwrap_or("");
+            if requested.trim().is_empty() {
+                Ok(json!({"files": list_files(root)}))
+            } else {
+                let path = safe_child(root, requested)?;
+                if !path.is_dir() {
+                    return Err("โฟลเดอร์ที่ขอไม่พบหรือไม่ใช่โฟลเดอร์".to_string());
+                }
+                Ok(json!({"files": list_files(&path), "path": requested}))
+            }
+        }
         "read" => {
             let requested = payload.get("path").and_then(Value::as_str).unwrap_or("");
             let path = safe_child(root, requested)?;
@@ -305,13 +355,7 @@ fn execute(action: &str, payload: &Value, root: &Path) -> Result<Value, String> 
             if command.is_empty() {
                 return Ok(json!({"output":"(ว่าง)"}));
             }
-            println!(
-                "\n⚠️ เว็บขอรันคำสั่งใน {}:\n  {command}\nพิมพ์ yes เพื่ออนุมัติ:",
-                root.display()
-            );
-            if prompt("")? != "yes" {
-                return Err("ผู้ใช้ไม่อนุมัติคำสั่งบน Desktop Connector".to_string());
-            }
+            approve_exec(auto_approve, command, root)?;
             let output = crate::tools::execute(
                 "run_command",
                 &json!({"command": command, "cwd": root, "timeout_seconds": 60}),

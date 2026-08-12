@@ -43,12 +43,36 @@
   function event(name, payload) {
     return `event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`;
   }
-  function sessionKey() { return sessionStorage.getItem(KEY_NAME) || ''; }
+  function sessionKey() { return localStorage.getItem(KEY_NAME) || sessionStorage.getItem(KEY_NAME) || ''; }
+  function saveKey(key) { localStorage.setItem(KEY_NAME, key); sessionStorage.removeItem(KEY_NAME); }
   function askForKey() {
-    const current = sessionKey();
-    const entered = window.prompt('ใส่ DeepSeek API key สำหรับ session นี้ (เก็บเฉพาะแท็บเบราว์เซอร์)\nเช่น sk-... ', current);
-    if (entered?.trim()) sessionStorage.setItem(KEY_NAME, entered.trim());
-    return sessionKey();
+    // กล่องกรอก API key แบบ app (window.prompt ไม่รองรับบน webview/มือถือ)
+    return new Promise((resolve) => {
+      let modal = document.getElementById('cb-key-modal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'cb-key-modal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:10020;display:grid;place-items:center;background:rgba(4,2,10,.78);backdrop-filter:blur(8px)';
+        modal.innerHTML = '<div class="cb-key-card" style="width:min(420px,92vw);padding:22px;border:1px solid rgba(181,126,255,.4);border-radius:18px;background:#120b22;color:#f8f2ff;font-family:Segoe UI,Noto Sans Thai,sans-serif;box-shadow:0 30px 90px #000">' +
+          '<h2 style="margin:0 0 6px">🔑 DeepSeek API key</h2>' +
+          '<p style="color:#cbbce4;font-size:13px;line-height:1.6;margin:0 0 12px">ใส่ key เพื่อใช้ Cloud chat (เก็บในเบราว์เซอร์นี้ ไม่ออกจากเครื่องของคุณ) — หา key ได้ที่ platform.deepseek.com</p>' +
+          '<input id="cb-key-input" type="password" placeholder="sk-..." autocomplete="off" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #7042aa;border-radius:10px;background:#0c0716;color:white;font:inherit">' +
+          '<div style="display:flex;gap:10px;margin-top:14px"><button id="cb-key-save" style="flex:1;padding:10px;border:0;border-radius:10px;background:linear-gradient(135deg,#7034df,#a65cff);color:white;font:inherit;font-weight:700;cursor:pointer">บันทึกและใช้งาน</button>' +
+          '<button id="cb-key-cancel" style="padding:10px 14px;border:1px solid #7042aa;border-radius:10px;background:transparent;color:#cbbce4;font:inherit;cursor:pointer">ยกเลิก</button></div>' +
+          '<p id="cb-key-hint" style="color:#6d648c;font-size:11px;margin:10px 0 0">เก็บเฉพาะเบราว์เซอร์นี้ — ไม่ส่งไปยังเซิร์ฟเวอร์ของเรา</p></div>';
+        document.body.appendChild(modal);
+        modal.querySelector('#cb-key-save').onclick = () => {
+          const value = modal.querySelector('#cb-key-input').value.trim();
+          if (value) saveKey(value);
+          modal.remove();
+          resolve(value || '');
+        };
+        modal.querySelector('#cb-key-cancel').onclick = () => { modal.remove(); resolve(''); };
+        modal.querySelector('#cb-key-input').addEventListener('keydown', (event) => { if (event.key === 'Enter') modal.querySelector('#cb-key-save').click(); });
+      }
+      modal.querySelector('#cb-key-input').value = sessionKey();
+      modal.querySelector('#cb-key-input').focus();
+    });
   }
   async function currentSession() {
     if (!client) throw new Error('ไม่สามารถโหลด Supabase ได้ กรุณารีเฟรชหน้าเว็บ');
@@ -80,28 +104,92 @@
     if (error) throw new Error('โหลดบริบทสนทนาไม่สำเร็จ');
     return (data || []).reverse().map((row) => ({ role: row.role, content: row.content }));
   }
+  /* ---------- Agentic: สั่งงานเข้าคอมผ่าน Desktop Connector ---------- */
+  const AGENT_TOOLS = [
+    {
+      type: 'function', function: {
+        name: 'run_command', description: 'รันคำสั่ง shell บนคอมพิวเตอร์ที่เชื่อมต่อ (Desktop Connector) — ใช้ตรวจ/สร้าง/แก้ไขไฟล์, build, รันโปรแกรม',
+        parameters: { type: 'object', properties: { command: { type: 'string', description: 'คำสั่ง bash/windows ที่จะรัน' }, cwd: { type: 'string', description: 'โฟลเดอร์ทำงาน (ไม่ใส่ = โฟลเดอร์ที่อนุญาต)' } }, required: ['command'] },
+      },
+    },
+    {
+      type: 'function', function: {
+        name: 'read_file', description: 'อ่านเนื้อหาไฟล์บนคอมพิวเตอร์ที่เชื่อมต่อ',
+        parameters: { type: 'object', properties: { path: { type: 'string', description: 'พาธไฟล์ (สัมพัทธ์กับโฟลเดอร์ที่อนุญาต หรือพาธเต็ม)' } }, required: ['path'] },
+      },
+    },
+    {
+      type: 'function', function: {
+        name: 'list_files', description: 'แสดงรายการไฟล์และโฟลเดอร์บนคอมพิวเตอร์ที่เชื่อมต่อ',
+        parameters: { type: 'object', properties: { path: { type: 'string', description: 'โฟลเดอร์ที่จะดู (ไม่ใส่ = root)' } }, required: [] },
+      },
+    },
+  ];
+  const agentSystem = 'คุณคือ CommandBlock ผู้ช่วยพัฒนาโค้ด AI ทำงานบนคอมพิวเตอร์ของผู้ใช้ผ่าน Desktop Connector ' +
+    'คุณสามารถรันคำสั่ง อ่านไฟล์ และดูรายการไฟล์เพื่อทำงานให้สำเร็จ — วางแผนเป็นขั้นตอน ใช้เครื่องมือทีละอย่าง ' +
+    'และสรุปผลงานเป็นภาษาไทยสั้นๆ กระชับ ถ้าเครื่องมือล้มเหลวให้ลองวิธีอื่นหรือแจ้งผู้ใช้';
+  async function agentCall(apiKey, messages) {
+    const response = await originalFetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: MODEL, messages, tools: AGENT_TOOLS, tool_choice: 'auto', max_tokens: 2048 }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error?.message || 'โมเดลตอบกลับไม่สำเร็จ');
+    return data;
+  }
+  async function agentTool(tool) {
+    const args = (() => { try { return JSON.parse(tool.function?.arguments || '{}'); } catch { return {}; } })();
+    const name = tool.function?.name || '';
+    if (name === 'run_command') return requestConnector('exec', { command: args.command || '', cwd: args.cwd || '' });
+    if (name === 'read_file') return requestConnector('read', { path: args.path || '' });
+    if (name === 'list_files') return requestConnector('files', { path: args.path || '' });
+    return { error: 'ไม่รู้จักเครื่องมือ ' + name };
+  }
   async function cloudChat(init) {
     try {
       const session = await currentSession();
       const { message } = requestBody(init);
       if (!message?.trim()) return sse([event('note', { t: 'กรุณาพิมพ์ข้อความก่อนส่ง' })], 400);
-      const apiKey = sessionKey() || askForKey();
+      const apiKey = sessionKey() || (await askForKey());
       if (!apiKey) return sse([event('note', { t: 'ต้องใส่ DeepSeek API key ก่อนใช้งาน Cloud chat' })], 400);
       const id = await saveMessage(session, 'user', message);
       const messages = await conversationMessages(session, id);
-      const response = await originalFetch(`${SUPABASE_URL}/functions/v1/chat`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${session.access_token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: MODEL, baseUrl: 'https://api.deepseek.com', apiKey, messages, conversationId: id }),
-      });
-      const data = await response.json();
-      if (!response.ok || data.error) throw new Error(data.error || 'Cloud chat ไม่สำเร็จ');
-      const content = String(data.content || '');
-      await saveMessage(session, 'assistant', content);
-      const usage = data.usage && typeof data.usage === 'object' ? data.usage : {
-        prompt_tokens: Math.ceil(message.length / 4), completion_tokens: Math.ceil(content.length / 4), total_tokens: Math.ceil((message.length + content.length) / 4), exact: false,
-      };
-      return sse([event('content', { t: content }), event('usage', usage)]);
+      messages.unshift({ role: 'system', content: agentSystem });
+      const events = [];
+      let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+      let steps = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        steps += 1;
+        if (steps > 12) { events.push(event('note', { t: '⚠️ งานยังไม่เสร็จใน 12 ขั้นตอน — พยายามต่อไปหรือแบ่งงานเป็นชิ้นเล็กๆ' })); break; }
+        const data = await agentCall(apiKey, messages);
+        const choice = data.choices?.[0]?.message || {};
+        const usage = data.usage || {};
+        totalUsage.prompt_tokens += Number(usage.prompt_tokens || 0);
+        totalUsage.completion_tokens += Number(usage.completion_tokens || 0);
+        totalUsage.total_tokens += Number(usage.total_tokens || 0);
+        if (choice.content) events.push(event('content', { t: choice.content }));
+        const calls = choice.tool_calls || [];
+        if (!calls.length) break;
+        messages.push({ role: 'assistant', content: choice.content || '', tool_calls: calls });
+        for (const call of calls) {
+          const name = call.function?.name || '';
+          let args = '{}';
+          try { args = JSON.stringify(JSON.parse(call.function?.arguments || '{}')); } catch { /* ignore */ }
+          events.push(event('tool', { name, args }));
+          let result;
+          try {
+            result = await agentTool(call);
+          } catch (error) {
+            result = { error: error.message || 'เรียกเครื่องมือไม่สำเร็จ' };
+          }
+          messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+        }
+      }
+      const content = (events.filter((e) => e.startsWith('event: content')).pop() || '').split('\n')[1]?.slice(6) || '';
+      if (content) await saveMessage(session, 'assistant', content);
+      return sse(events.concat([event('usage', totalUsage)]));
     } catch (error) {
       return sse([event('note', { t: error.message || 'ไม่สามารถเชื่อมต่อ Cloud chat ได้' })], 400);
     }
