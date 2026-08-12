@@ -9,6 +9,7 @@
 
 mod config;
 mod gui;
+mod connector;
 mod llm;
 mod tools;
 
@@ -95,6 +96,17 @@ fn main() {
             }
             _ => {}
         }
+    }
+
+    if args.iter().any(|arg| arg == "--connector") {
+        let connector_agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(30))
+            .build();
+        if let Err(error) = connector::run(connector_agent) {
+            eprintln!("Desktop Connector: {error}");
+            std::process::exit(1);
+        }
+        return;
     }
 
     let cli_mode = args.iter().any(|a| a == "--cli");
@@ -535,6 +547,7 @@ fn print_main_help() {
          วิธีใช้:\n\
          \x20 buff                          เปิด GUI แชท (ค่าเริ่มต้น)\n\
          \x20 buff --cli                    เปิดแชทแบบเทอร์มินัล\n\
+         \x20 buff --connector              เชื่อม Commandblock Web กับเครื่องนี้\n\
          \x20 buff \"ทำงานให้ฉัน...\"        รันงานครั้งเดียวแล้วจบ (one-shot)\n\
          \x20 buff --help                   ดูวิธีใช้นี้\n\
          \x20 buff --version                ดูเวอร์ชัน\n\

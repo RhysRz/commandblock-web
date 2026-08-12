@@ -6,6 +6,7 @@
   const MODEL = 'deepseek-v4-flash';
   const KEY_NAME = 'commandblock.deepseek.api-key';
   const NOTES_NAME = 'commandblock.cloud-notes';
+  const ACTIVE_DEVICE_NAME = 'commandblock.active-device-id';
   const originalFetch = window.fetch.bind(window);
   const client = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
   let conversationId = null;
@@ -107,6 +108,43 @@
     }
     return json({ notes: sessionStorage.getItem(NOTES_NAME) || '' });
   }
+  async function activeConnector(session) {
+    const staleBefore = new Date(Date.now() - 45_000).toISOString();
+    const preferred = sessionStorage.getItem(ACTIVE_DEVICE_NAME);
+    if (preferred) {
+      const { data } = await client.from('connector_devices').select('id,name,root_name,last_seen_at')
+        .eq('id', preferred).gte('last_seen_at', staleBefore).maybeSingle();
+      if (data) return data;
+      sessionStorage.removeItem(ACTIVE_DEVICE_NAME);
+    }
+    const { data, error } = await client.from('connector_devices').select('id,name,root_name,last_seen_at')
+      .eq('user_id', session.user.id).gte('last_seen_at', staleBefore)
+      .order('last_seen_at', { ascending: false }).limit(1).maybeSingle();
+    if (error || !data) throw new Error('ไม่พบ Desktop Connector ที่ออนไลน์อยู่ — เปิด Commandblock.exe --connector บนเครื่องก่อน');
+    sessionStorage.setItem(ACTIVE_DEVICE_NAME, data.id);
+    return data;
+  }
+  async function requestConnector(action, payload) {
+    const session = await currentSession();
+    const device = await activeConnector(session);
+    const { data: command, error: insertError } = await client.from('connector_commands')
+      .insert({ user_id: session.user.id, device_id: device.id, action, payload }).select('id').single();
+    if (insertError || !command) throw new Error('ส่งคำสั่งไปยัง Desktop Connector ไม่สำเร็จ');
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      const { data, error } = await client.from('connector_commands').select('status,result,error')
+        .eq('id', command.id).maybeSingle();
+      if (error || !data) throw new Error('ไม่สามารถอ่านผลจาก Desktop Connector ได้');
+      if (data.status === 'completed') return data.result || {};
+      if (data.status === 'rejected') throw new Error(data.error || 'คำสั่งถูกปฏิเสธบนเครื่อง Desktop Connector');
+      if (data.status === 'failed') throw new Error(data.error || 'Desktop Connector ทำงานไม่สำเร็จ');
+    }
+    throw new Error('Desktop Connector ยังไม่ตอบกลับภายใน 18 วินาที');
+  }
+  async function connectorResult(action, payload, fallback) {
+    try { return json(await requestConnector(action, payload)); }
+    catch (error) { return json(fallback(error.message || connectorMessage), 503); }
+  }
   function unsupported(path) {
     const activity = [`⚠️ ${connectorMessage}`];
     if (path === '/api/files') return json({ files: [], requires_connector: true, message: connectorMessage });
@@ -128,7 +166,16 @@
     if (path === '/api/chat') return cloudChat(init);
     if (path === '/api/history') return cloudHistory();
     if (path === '/api/notes') return cloudNotes(init);
-    if (['/api/exec', '/api/files', '/api/read', '/api/changes', '/api/queue', '/api/pick-folder', '/api/settings', '/api/startup-log'].includes(path)) return unsupported(path);
+    if (path === '/api/files') return connectorResult('files', {}, (message) => ({ files: [], requires_connector: true, message }));
+    if (path === '/api/changes') return connectorResult('changes', {}, (message) => ({ changes: [], requires_connector: true, message }));
+    if (path === '/api/queue') return connectorResult('queue', {}, (message) => ({ activity: [`⚠️ ${message}`], requires_connector: true }));
+    if (path === '/api/read') {
+      const requested = new URL(typeof input === 'string' ? input : input.url, location.origin).searchParams.get('path') || '';
+      return connectorResult('read', { path: requested }, (message) => ({ content: message, requires_connector: true }));
+    }
+    if (path === '/api/pick-folder') return connectorResult('pick_folder', {}, (message) => ({ ok: false, requires_connector: true, message }));
+    if (path === '/api/exec') return connectorResult('exec', requestBody(init), (message) => ({ output: message, requires_connector: true }));
+    if (['/api/settings', '/api/startup-log'].includes(path)) return unsupported(path);
     return originalFetch(input, init);
   };
 

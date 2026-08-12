@@ -26,3 +26,13 @@ test('web-only settings hide unavailable skills and expose a real logout action'
   assert.match(source, /document\.querySelector\('\.statusbar'\)\?\.appendChild\(logout\)/);
   assert.match(source, /#modelPill\{max-width:none!important;overflow:visible!important\}/);
 });
+
+test('web adapter uses a selected connector device for local pane operations', () => {
+  const source = fs.readFileSync(path.join(root, 'web', 'cloud-adapter.js'), 'utf8');
+
+  assert.match(source, /async function requestConnector\(action, payload\)/);
+  assert.match(source, /from\('connector_commands'\)/);
+  assert.match(source, /commandblock\.active-device-id/);
+  assert.match(source, /path === '\/api\/files'.*connectorResult\('files'/s);
+  assert.match(source, /path === '\/api\/exec'.*connectorResult\('exec'/s);
+});
