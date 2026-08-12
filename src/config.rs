@@ -1,4 +1,4 @@
-﻿//! การตั้งค่า Commandblock — อ่านจาก config.json (ในโฟลเดอร์ที่รัน หรือข้างไฟล์ .exe) + ตัวแปร env
+//! การตั้งค่า Commandblock — อ่านจาก config.json (ในโฟลเดอร์ที่รัน หรือข้างไฟล์ .exe) + ตัวแปร env
 //!
 //! ลำดับความสำคัญ: env vars > config.json > ค่า default
 //! env: BUFF_BACKEND, BUFF_API_KEY, BUFF_BASE_URL, BUFF_MODEL
@@ -108,14 +108,33 @@ pub fn load() -> Config {
                 if let Some(arr) = v.get("models").and_then(|m| m.as_array()) {
                     for it in arr {
                         if let Some(s) = it.as_str() {
-                            file_models.push(ModelEntry { name: s.to_string(), base_url: String::new(), api_key: String::new() });
+                            file_models.push(ModelEntry {
+                                name: s.to_string(),
+                                base_url: String::new(),
+                                api_key: String::new(),
+                            });
                         } else if let Some(o) = it.as_object() {
-                            let name = o.get("model").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+                            let name = o
+                                .get("model")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .trim()
+                                .to_string();
                             if !name.is_empty() {
                                 file_models.push(ModelEntry {
                                     name,
-                                    base_url: o.get("base_url").and_then(|x| x.as_str()).unwrap_or("").trim().to_string(),
-                                    api_key: o.get("api_key").and_then(|x| x.as_str()).unwrap_or("").trim().to_string(),
+                                    base_url: o
+                                        .get("base_url")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .trim()
+                                        .to_string(),
+                                    api_key: o
+                                        .get("api_key")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .trim()
+                                        .to_string(),
                                 });
                             }
                         }
@@ -143,13 +162,30 @@ pub fn load() -> Config {
     // env vars (ชนะ config.json)
     let env_backend = env::var("BUFF_BACKEND").unwrap_or_default();
     let env_url = env::var("BUFF_BASE_URL").unwrap_or_default();
-    let env_key = env::var("BUFF_API_KEY").unwrap_or_else(|_| env::var("OPENAI_API_KEY").unwrap_or_default());
+    let env_key =
+        env::var("BUFF_API_KEY").unwrap_or_else(|_| env::var("OPENAI_API_KEY").unwrap_or_default());
     let env_model = env::var("BUFF_MODEL").unwrap_or_default();
 
-    let backend = parse_backend(if !env_backend.is_empty() { &env_backend } else { &file_backend });
-    let base_url = if !env_url.is_empty() { env_url } else { file_url };
-    let api_key = if !env_key.is_empty() { env_key } else { file_key };
-    let model = if !env_model.is_empty() { env_model } else { file_model };
+    let backend = parse_backend(if !env_backend.is_empty() {
+        &env_backend
+    } else {
+        &file_backend
+    });
+    let base_url = if !env_url.is_empty() {
+        env_url
+    } else {
+        file_url
+    };
+    let api_key = if !env_key.is_empty() {
+        env_key
+    } else {
+        file_key
+    };
+    let model = if !env_model.is_empty() {
+        env_model
+    } else {
+        file_model
+    };
 
     Config {
         backend,
@@ -190,9 +226,17 @@ pub fn effective(cfg: &Config, ollama_reachable: bool, ollama_model: Option<Stri
     match backend {
         Backend::OpenAI => Effective {
             backend,
-            base_url: clean_url(if cfg.base_url.is_empty() { DEFAULT_OPENAI_URL.into() } else { cfg.base_url.clone() }),
+            base_url: clean_url(if cfg.base_url.is_empty() {
+                DEFAULT_OPENAI_URL.into()
+            } else {
+                cfg.base_url.clone()
+            }),
             api_key: cfg.api_key.clone(),
-            model: if cfg.model.is_empty() { DEFAULT_OPENAI_MODEL.into() } else { cfg.model.clone() },
+            model: if cfg.model.is_empty() {
+                DEFAULT_OPENAI_MODEL.into()
+            } else {
+                cfg.model.clone()
+            },
         },
         Backend::Ollama => {
             // ใช้ localhost เป็นค่าเริ่มต้น ยกเว้นผู้ใช้ตั้ง backend=ollama + base_url เองชัดเจน
@@ -213,7 +257,7 @@ pub fn effective(cfg: &Config, ollama_reachable: bool, ollama_model: Option<Stri
                     ollama_model.unwrap_or_else(|| DEFAULT_OLLAMA_MODEL.into())
                 },
             }
-        },
+        }
         _ => Effective {
             backend: Backend::Offline,
             base_url: String::new(),

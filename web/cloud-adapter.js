@@ -141,6 +141,62 @@
     }
     throw new Error('Desktop Connector ยังไม่ตอบกลับภายใน 18 วินาที');
   }
+
+  function waitForIceComplete(peer, timeout = 12000) {
+    if (peer.iceGatheringState === 'complete') return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { peer.removeEventListener('icegatheringstatechange', done); reject(new Error('เตรียมการเชื่อมต่อ P2P นานเกินไป')); }, timeout);
+      const done = () => { if (peer.iceGatheringState === 'complete') { clearTimeout(timer); peer.removeEventListener('icegatheringstatechange', done); resolve(); } };
+      peer.addEventListener('icegatheringstatechange', done);
+    });
+  }
+  function mountRemotePC() {
+    if (document.querySelector('#cb-remote-open')) return;
+    const style = document.createElement('style');
+    style.textContent = `#cb-remote-open{margin-left:6px;flex-shrink:0;padding:3px 10px}.cb-remote-modal{position:fixed;inset:0;z-index:10002;display:grid;place-items:center;padding:20px;background:rgba(4,2,10,.76);backdrop-filter:blur(8px)}.cb-remote-modal[hidden]{display:none}.cb-remote-card{width:min(1100px,100%);max-height:calc(100dvh - 40px);overflow:auto;padding:20px;border:1px solid rgba(181,126,255,.4);border-radius:20px;background:#110a20;color:#f8f2ff;box-shadow:0 30px 90px #000}.cb-remote-card h2{margin:0 0 6px}.cb-remote-card p{color:#cbbce4;line-height:1.5}.cb-remote-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.cb-remote-row button{padding:9px 12px;border:1px solid #7042aa;border-radius:10px;background:#25143f;color:white;font:inherit;cursor:pointer}.cb-remote-row button.primary{border:0;background:linear-gradient(135deg,#7034df,#a65cff)}#cb-remote-canvas{display:block;width:100%;max-height:68dvh;object-fit:contain;background:#050308;border:1px solid #41236d;border-radius:12px;cursor:crosshair;outline:none}.cb-remote-note{font-size:12px;color:#bda9de}.cb-remote-status{min-height:22px;color:#bfeadf}.cb-remote-device{padding:9px 12px;border-radius:10px;border:1px solid #513071;background:#171022;cursor:pointer}.cb-remote-device.selected{outline:2px solid #9e5cff;background:#2c1748}@media(max-width:760px){.cb-remote-modal{padding:8px}.cb-remote-card{padding:14px;border-radius:14px}.cb-remote-row{display:grid;grid-template-columns:1fr}.cb-remote-row button{width:100%}}`;
+    document.head.appendChild(style);
+    const open = document.createElement('button'); open.id = 'cb-remote-open'; open.className = 'pill'; open.type = 'button'; open.textContent = '🖥 Remote PC';
+    document.querySelector('.statusbar')?.appendChild(open);
+    const modal = document.createElement('section'); modal.className = 'cb-remote-modal'; modal.hidden = true;
+    modal.innerHTML = `<div class="cb-remote-card" role="dialog" aria-modal="true" aria-label="Remote PC"><div class="cb-remote-row"><div><h2>Remote PC</h2><p>ภาพหน้าจอและการควบคุมส่งตรงระหว่างเบราว์เซอร์กับเครื่องของคุณผ่าน WebRTC</p></div><button id="cb-remote-close">ปิด</button></div><div id="cb-remote-devices" class="cb-remote-row"></div><div class="cb-remote-row"><button id="cb-remote-view" class="primary">ดูหน้าจอ</button><button id="cb-remote-control">ควบคุมเครื่อง</button></div><div id="cb-remote-status" class="cb-remote-status"></div><canvas id="cb-remote-canvas" width="1280" height="720" tabindex="0"></canvas><p class="cb-remote-note">เครื่องปลายทางต้องเปิด <code>Commandblock.exe --remote</code> และกดยืนยันทุกครั้ง การเชื่อมต่อ P2P อาจใช้ไม่ได้ในบางเครือข่ายที่บล็อก UDP</p></div>`;
+    document.body.appendChild(modal);
+    const devices = modal.querySelector('#cb-remote-devices'); const status = modal.querySelector('#cb-remote-status'); const canvas = modal.querySelector('#cb-remote-canvas'); const context = canvas.getContext('2d');
+    let selected = null; let peer = null; let channel = null; let activeSession = null; let mode = 'view'; let frame = null; let frameImage = null;
+    const report = (message, error = false) => { status.textContent = message; status.style.color = error ? '#ffc2d8' : '#bfeadf'; };
+    async function loadDevices() {
+      const session = await currentSession(); const stale = new Date(Date.now() - 45_000).toISOString();
+      const { data, error } = await client.from('remote_devices').select('id,name,last_seen_at').eq('user_id', session.user.id).gte('last_seen_at', stale).order('last_seen_at', { ascending: false });
+      if (error) throw error; devices.replaceChildren();
+      for (const item of data || []) { const button = document.createElement('button'); button.className = 'cb-remote-device'; button.textContent = `🖥 ${item.name}`; button.onclick = () => { selected = item; devices.querySelectorAll('button').forEach((x) => x.classList.toggle('selected', x === button)); report(`เลือก ${item.name}`); }; devices.appendChild(button); }
+      if (!data?.length) report('ยังไม่พบเครื่องออนไลน์ — เปิด Commandblock.exe --remote บนเครื่องปลายทางก่อน', true);
+      else { selected = data[0]; devices.firstElementChild.classList.add('selected'); report(`เลือก ${selected.name}`); }
+    }
+    function handleMessage(message) {
+      let data; try { data = JSON.parse(typeof message === 'string' ? message : new TextDecoder().decode(message)); } catch { return; }
+      if (data.type === 'frame') frame = { ...data, pieces: new Array(data.chunks) };
+      if (data.type === 'frame_chunk' && frame && data.id === frame.id) { frame.pieces[data.index] = data.data; if (frame.pieces.every(Boolean)) { const binary = atob(frame.pieces.join('')); const bytes = Uint8Array.from(binary, (x) => x.charCodeAt(0)); const blob = new Blob([bytes], { type: 'image/jpeg' }); const url = URL.createObjectURL(blob); const image = new Image(); image.onload = () => { URL.revokeObjectURL(frameImage || ''); frameImage = url; canvas.width = frame.width; canvas.height = frame.height; context.drawImage(image, 0, 0); }; image.src = url; frame = null; } }
+    }
+    async function start(nextMode) {
+      if (!selected) { report('เลือกเครื่องก่อน', true); return; } mode = nextMode; report('กำลังสร้างการเชื่อมต่อ P2P…');
+      try {
+        const session = await currentSession(); peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        channel = peer.createDataChannel('commandblock-remote', { ordered: true }); channel.binaryType = 'arraybuffer'; channel.onmessage = (event) => handleMessage(event.data); channel.onopen = () => report(nextMode === 'control' ? 'เชื่อมต่อแล้ว — ควบคุมได้' : 'เชื่อมต่อแล้ว — ดูหน้าจอได้'); channel.onclose = () => report('การเชื่อมต่อถูกปิด');
+        peer.onconnectionstatechange = () => { if (peer?.connectionState === 'failed') report('P2P เชื่อมต่อไม่สำเร็จ ลองใช้เครือข่ายอื่น', true); };
+        const offer = await peer.createOffer(); await peer.setLocalDescription(offer); await waitForIceComplete(peer);
+        const { data, error } = await client.from('remote_sessions').insert({ user_id: session.user.id, device_id: selected.id, mode: nextMode, offer: peer.localDescription }).select('id').single();
+        if (error || !data) throw new Error(error?.message || 'ส่งคำขอ Remote ไม่สำเร็จ'); activeSession = data.id; report('ส่งคำขอแล้ว — รอให้ยืนยันบนเครื่องปลายทาง…');
+        for (let attempt = 0; attempt < 80; attempt += 1) { await new Promise((resolve) => setTimeout(resolve, 1000)); const { data: remote, error: pollError } = await client.from('remote_sessions').select('status,answer').eq('id', activeSession).single(); if (pollError) throw pollError; if (remote.status === 'denied') throw new Error('เครื่องปลายทางปฏิเสธคำขอ'); if (remote.status === 'closed' || remote.status === 'expired') throw new Error('คำขอถูกปิดหรือหมดอายุ'); if (remote.answer) { await peer.setRemoteDescription(remote.answer); return; } }
+        throw new Error('รอการยืนยันนานเกินไป');
+      } catch (error) { report(error.message || 'Remote PC ไม่สำเร็จ', true); peer?.close(); peer = null; channel = null; }
+    }
+    canvas.addEventListener('pointermove', (event) => { if (mode !== 'control' || channel?.readyState !== 'open') return; const rect = canvas.getBoundingClientRect(); channel.send(JSON.stringify({ type:'pointer', action:'move', x:(event.clientX-rect.left)/rect.width, y:(event.clientY-rect.top)/rect.height })); });
+    for (const [eventName, action] of [['pointerdown','down'], ['pointerup','up']]) canvas.addEventListener(eventName, (event) => { if (mode !== 'control' || channel?.readyState !== 'open') return; const rect = canvas.getBoundingClientRect(); canvas.focus(); channel.send(JSON.stringify({ type:'pointer', action, x:(event.clientX-rect.left)/rect.width, y:(event.clientY-rect.top)/rect.height })); });
+    canvas.addEventListener('wheel', (event) => { if (mode === 'control' && channel?.readyState === 'open') { event.preventDefault(); channel.send(JSON.stringify({ type:'wheel', delta:Math.sign(event.deltaY) })); } }, { passive:false });
+    canvas.addEventListener('keydown', (event) => { if (mode === 'control' && channel?.readyState === 'open') { event.preventDefault(); channel.send(JSON.stringify({ type:'key', key:event.key })); } });
+    modal.querySelector('#cb-remote-view').onclick = () => start('view'); modal.querySelector('#cb-remote-control').onclick = () => start('control');
+    modal.querySelector('#cb-remote-close').onclick = async () => { peer?.close(); if (activeSession) await client.from('remote_sessions').update({ status:'closed' }).eq('id', activeSession); peer = null; channel = null; activeSession = null; modal.hidden = true; };
+    open.onclick = async () => { modal.hidden = false; await loadDevices().catch((error) => report(error.message || 'โหลดเครื่องไม่สำเร็จ', true)); };
+  }
   async function connectorResult(action, payload, fallback) {
     try { return json(await requestConnector(action, payload)); }
     catch (error) { return json(fallback(error.message || connectorMessage), 503); }
@@ -194,7 +250,7 @@
     const name = gate.querySelector('#cb-cloud-name');
     const report = (message, error = false) => { status.textContent = message; status.style.color = error ? '#ffc2d8' : '#bfeadf'; };
     const errorText = (error) => error?.message === 'Invalid login credentials' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : (error?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
-    const openApp = () => { gate.hidden = true; document.documentElement.classList.remove('cb-auth-pending'); };
+    const openApp = () => { gate.hidden = true; document.documentElement.classList.remove('cb-auth-pending'); mountRemotePC(); };
     const logout = document.createElement('button');
     logout.id = 'cb-cloud-logout';
     logout.className = 'pill';

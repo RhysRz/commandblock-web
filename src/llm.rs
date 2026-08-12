@@ -47,7 +47,11 @@ pub fn ollama_reachable(agent: &ureq::Agent, url: &str) -> bool {
 /// (ชอบโมเดลสาย coder ก่อน แล้วในกลุ่มเดียวกันเลือกตัวเล็กสุด = เร็วสุดบน CPU)
 pub fn pick_model(agent: &ureq::Agent, base_url: &str) -> Option<String> {
     let u = format!("{}/models", base_url.trim_end_matches('/'));
-    let resp = agent.get(&u).timeout(std::time::Duration::from_secs(8)).call().ok()?;
+    let resp = agent
+        .get(&u)
+        .timeout(std::time::Duration::from_secs(8))
+        .call()
+        .ok()?;
     let text = resp.into_string().ok()?;
     let v: Value = serde_json::from_str(&text).ok()?;
 
@@ -70,7 +74,10 @@ pub fn pick_model(agent: &ureq::Agent, base_url: &str) -> Option<String> {
 fn model_score(id: &str) -> i32 {
     let lower = id.to_lowercase();
     // ระดับ (tier): โมเดลสาย coder ดีที่สุด
-    let tier = if lower.contains("qwen2.5-coder") || lower.contains("qwen3-coder") || lower.contains("codestral") {
+    let tier = if lower.contains("qwen2.5-coder")
+        || lower.contains("qwen3-coder")
+        || lower.contains("codestral")
+    {
         100
     } else if lower.contains("deepseek") {
         80
@@ -84,11 +91,13 @@ fn model_score(id: &str) -> i32 {
         30
     };
     // ในระดับเดียวกัน เลือกตัวเล็กสุด (เร็วสุดบน CPU)
-    let size_b: f32 = ["70", "32", "27", "14", "9", "8", "7", "4", "3", "1.5", "0.5"]
-        .iter()
-        .find(|s| lower.contains(&format!("{}b", s)))
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100.0);
+    let size_b: f32 = [
+        "70", "32", "27", "14", "9", "8", "7", "4", "3", "1.5", "0.5",
+    ]
+    .iter()
+    .find(|s| lower.contains(&format!("{}b", s)))
+    .and_then(|s| s.parse().ok())
+    .unwrap_or(100.0);
     tier - (size_b * 3.0) as i32
 }
 
@@ -247,7 +256,10 @@ pub fn chat_stream(
                 }
                 // extra_content (เช่น thought_signature ของ Gemini) — ต่อชิ้นแล้วเก็บไว้
                 if let Some(ec) = tc.get("extra_content") {
-                    if let Some(s) = ec.get("google").and_then(|g| g["thought_signature"].as_str()) {
+                    if let Some(s) = ec
+                        .get("google")
+                        .and_then(|g| g["thought_signature"].as_str())
+                    {
                         tool_deltas[idx].3.push_str(s);
                     }
                 }
@@ -255,25 +267,25 @@ pub fn chat_stream(
         }
     }
 
-/// อ่านเวลารอจากข้อความ error เช่น "Please retry in 11.8s" / "try again in 5 seconds"
-fn extract_retry_seconds(text: &str) -> Option<u64> {
-    let lower = text.to_lowercase();
-    for pat in ["retry in ", "try again in ", "try in "] {
-        if let Some(pos) = lower.find(pat) {
-            let rest = &lower[pos + pat.len()..];
-            let num: String = rest
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || *c == '.')
-                .collect();
-            if let Ok(secs) = num.parse::<f64>() {
-                if secs > 0.0 {
-                    return Some((secs.ceil() as u64) + 1); // เผื่ออีก 1 วิ
+    /// อ่านเวลารอจากข้อความ error เช่น "Please retry in 11.8s" / "try again in 5 seconds"
+    fn extract_retry_seconds(text: &str) -> Option<u64> {
+        let lower = text.to_lowercase();
+        for pat in ["retry in ", "try again in ", "try in "] {
+            if let Some(pos) = lower.find(pat) {
+                let rest = &lower[pos + pat.len()..];
+                let num: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                if let Ok(secs) = num.parse::<f64>() {
+                    if secs > 0.0 {
+                        return Some((secs.ceil() as u64) + 1); // เผื่ออีก 1 วิ
+                    }
                 }
             }
         }
+        None
     }
-    None
-}
 
     let mut tool_calls = Vec::new();
     for (id, name, args, extra_str) in &tool_deltas {

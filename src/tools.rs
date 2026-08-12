@@ -1,4 +1,4 @@
-﻿//! เครื่องมือ (tools) ของ Commandblock — ใช้สำหรับส่งให้ LLM เรียกใช้
+//! เครื่องมือ (tools) ของ Commandblock — ใช้สำหรับส่งให้ LLM เรียกใช้
 //! 13 อย่าง: read_file, write_file, edit_file, append_file,
 //! list_directory, code_search, run_command, update_plan,
 //! web_search, read_url, open_preview, list_skills, load_skill
@@ -30,7 +30,10 @@ pub static ACTIVITY: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 fn record_activity(name: &str, args: &Value) {
     let mut a = ACTIVITY.lock().unwrap();
-    a.push(format!("{name} {}", serde_json::to_string(args).unwrap_or_default()));
+    a.push(format!(
+        "{name} {}",
+        serde_json::to_string(args).unwrap_or_default()
+    ));
     if a.len() > 50 {
         let keep = a.len() - 50;
         a.drain(..keep);
@@ -212,7 +215,12 @@ pub fn execute(name: &str, args: &Value, plan: &mut Option<String>) -> String {
         "code_search" => code_search(args),
         "run_command" => run_command(args),
         "update_plan" => {
-            let p = args.get("plan").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let p = args
+                .get("plan")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
             if p.is_empty() {
                 "ไม่ได้รับข้อความแผน".to_string()
             } else {
@@ -260,7 +268,9 @@ fn read_file(args: &Value) -> String {
 
     // ตรวจไฟล์ไบนารี
     let mut probe = [0u8; 8192];
-    let n = fs::File::open(path).and_then(|mut f| f.read(&mut probe)).unwrap_or(0);
+    let n = fs::File::open(path)
+        .and_then(|mut f| f.read(&mut probe))
+        .unwrap_or(0);
     if probe[..n].contains(&0) {
         return "[read_file] ดูเหมือนไฟล์ไบนารี (มี byte 0) — ไม่แสดงเนื้อหา".to_string();
     }
@@ -287,9 +297,19 @@ fn read_file(args: &Value) -> String {
     for (i, line) in lines[offset..end].iter().enumerate() {
         out.push_str(&format!("{:>6} │ {}\n", offset + i + 1, line));
     }
-    let mut note = format!("[read_file] {} ({} บรรทัด, แสดง {}-{})", path, total, offset + 1, end);
+    let mut note = format!(
+        "[read_file] {} ({} บรรทัด, แสดง {}-{})",
+        path,
+        total,
+        offset + 1,
+        end
+    );
     if end < total {
-        note.push_str(&format!(" — ยังมีอีก {} บรรทัด ใช้ offset={} อ่านต่อ", total - end, end));
+        note.push_str(&format!(
+            " — ยังมีอีก {} บรรทัด ใช้ offset={} อ่านต่อ",
+            total - end,
+            end
+        ));
     }
     out.push_str(&note);
     out
@@ -298,7 +318,10 @@ fn read_file(args: &Value) -> String {
 // ---------- write_file ----------
 
 fn write_file(args: &Value) -> String {
-    let (Some(path), Some(content)) = (arg_str(args, "path"), args.get("content").and_then(|v| v.as_str())) else {
+    let (Some(path), Some(content)) = (
+        arg_str(args, "path"),
+        args.get("content").and_then(|v| v.as_str()),
+    ) else {
         return "[write_file] ต้องระบุ path และ content".to_string();
     };
     if let Some(parent) = Path::new(path).parent() {
@@ -308,7 +331,9 @@ fn write_file(args: &Value) -> String {
     }
     let existed = Path::new(path).exists();
     let old_lines = if existed {
-        fs::read_to_string(path).map(|c| c.lines().count()).unwrap_or(0)
+        fs::read_to_string(path)
+            .map(|c| c.lines().count())
+            .unwrap_or(0)
     } else {
         0
     };
@@ -343,13 +368,11 @@ fn edit_file(args: &Value) -> String {
         Err(e) => return format!("[edit_file] อ่านไฟล์ไม่สำเร็จ: {e}"),
     };
     if !content.contains(old) {
-        return format!("[edit_file] ไม่พบข้อความที่จะแทนที่ใน {path} — ตรวจว่า old ตรงกับในไฟล์เป๊ะๆ (รวมช่องว่าง)");
+        return format!(
+            "[edit_file] ไม่พบข้อความที่จะแทนที่ใน {path} — ตรวจว่า old ตรงกับในไฟล์เป๊ะๆ (รวมช่องว่าง)"
+        );
     }
-    let count = if all {
-        content.matches(old).count()
-    } else {
-        1
-    };
+    let count = if all { content.matches(old).count() } else { 1 };
     let new_content = if all {
         content.replace(old, new)
     } else {
@@ -372,7 +395,10 @@ fn edit_file(args: &Value) -> String {
 // ---------- append_file ----------
 
 fn append_file(args: &Value) -> String {
-    let (Some(path), Some(content)) = (arg_str(args, "path"), args.get("content").and_then(|v| v.as_str())) else {
+    let (Some(path), Some(content)) = (
+        arg_str(args, "path"),
+        args.get("content").and_then(|v| v.as_str()),
+    ) else {
         return "[append_file] ต้องระบุ path และ content".to_string();
     };
     if let Some(parent) = Path::new(path).parent() {
@@ -446,9 +472,27 @@ fn fmt_size(b: u64) -> String {
 // ---------- code_search ----------
 
 const SKIP_DIRS: &[&str] = &[
-    ".git", "node_modules", "target", "dist", "build", "vendor", ".venv", "venv",
-    "__pycache__", ".next", ".nuxt", ".freebuff", ".idea", ".vscode", ".worktrees",
-    ".cache", "out", "bin", "obj", ".pytest_cache", "coverage",
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "vendor",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".next",
+    ".nuxt",
+    ".freebuff",
+    ".idea",
+    ".vscode",
+    ".worktrees",
+    ".cache",
+    "out",
+    "bin",
+    "obj",
+    ".pytest_cache",
+    "coverage",
 ];
 
 fn code_search(args: &Value) -> String {
@@ -520,12 +564,18 @@ fn walk(
             walk(&path, pattern, whole_word, ci, hits, scanned);
         } else if ft.is_file() {
             // ข้ามไฟล์ใหญ่เกิน 5 MB
-            if entry.metadata().map(|m| m.len() > 5_000_000).unwrap_or(false) {
+            if entry
+                .metadata()
+                .map(|m| m.len() > 5_000_000)
+                .unwrap_or(false)
+            {
                 continue;
             }
             // ข้ามไบนารี
             let mut probe = [0u8; 4096];
-            let n = fs::File::open(&path).and_then(|mut f| f.read(&mut probe)).unwrap_or(0);
+            let n = fs::File::open(&path)
+                .and_then(|mut f| f.read(&mut probe))
+                .unwrap_or(0);
             if probe[..n].contains(&0) {
                 continue;
             }
@@ -533,7 +583,11 @@ fn walk(
                 continue;
             };
             *scanned += 1;
-            let target = if ci { content.to_lowercase() } else { content.clone() };
+            let target = if ci {
+                content.to_lowercase()
+            } else {
+                content.clone()
+            };
             if !target.contains(pattern) {
                 continue;
             }
@@ -541,7 +595,11 @@ fn walk(
                 if hits.len() >= MAX_SEARCH_HITS {
                     break;
                 }
-                let l = if ci { line.to_lowercase() } else { line.to_string() };
+                let l = if ci {
+                    line.to_lowercase()
+                } else {
+                    line.to_string()
+                };
                 if l.contains(pattern) && (!whole_word || is_whole_word(&l, pattern)) {
                     let trimmed: String = line.trim().chars().take(200).collect();
                     hits.push(format!("{}:{}: {}", path.display(), i + 1, trimmed));
@@ -552,13 +610,12 @@ fn walk(
 }
 
 fn is_whole_word(line: &str, pattern: &str) -> bool {
-    line.match_indices(pattern)
-        .any(|(start, _)| {
-            let before_ok = start == 0 || !line.as_bytes()[start - 1].is_ascii_alphanumeric();
-            let end = start + pattern.len();
-            let after_ok = end >= line.len() || !line.as_bytes()[end].is_ascii_alphanumeric();
-            before_ok && after_ok
-        })
+    line.match_indices(pattern).any(|(start, _)| {
+        let before_ok = start == 0 || !line.as_bytes()[start - 1].is_ascii_alphanumeric();
+        let end = start + pattern.len();
+        let after_ok = end >= line.len() || !line.as_bytes()[end].is_ascii_alphanumeric();
+        before_ok && after_ok
+    })
 }
 
 // ---------- run_command ----------
@@ -637,7 +694,10 @@ fn run_command(args: &Value) -> String {
 
     match status {
         Some(s) => {
-            let code = s.code().map(|c| c.to_string()).unwrap_or_else(|| "?".to_string());
+            let code = s
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "?".to_string());
             format!("[run_command] รหัสจบ: {code}\n{text}")
         }
         None => format!("[run_command] ใช้เวลาเกิน {timeout} วินาที ถูกยกเลิก\n{text}"),
@@ -728,14 +788,23 @@ fn parse_ddg_results(html: &str, max: usize, query: &str) -> String {
         pos = abs + "result__snippet".len();
     }
 
-    let mut out = format!("[web_search] ผลการค้นหา '{query}' ({} รายการ):\n", titles.len().min(max));
+    let mut out = format!(
+        "[web_search] ผลการค้นหา '{query}' ({} รายการ):\n",
+        titles.len().min(max)
+    );
     for (i, (tpos, title, url)) in titles.iter().take(max).enumerate() {
         let snip = snippets
             .iter()
             .find(|(spos, _)| *spos > *tpos)
             .map(|(_, s)| s.as_str())
             .unwrap_or("");
-        out.push_str(&format!("\n{}. {}\n   URL: {}\n   {}\n", i + 1, title, url, snip));
+        out.push_str(&format!(
+            "\n{}. {}\n   URL: {}\n   {}\n",
+            i + 1,
+            title,
+            url,
+            snip
+        ));
     }
     if titles.is_empty() {
         out.push_str("   (ไม่พบผลลัพธ์ — ลองเปลี่ยนคำค้นหาเป็นภาษาอังกฤษ หรือค้นให้เฉพาะเจาะจงขึ้น)\n");
@@ -836,7 +905,9 @@ fn read_url(args: &Value) -> String {
         Err(e) => return format!("[read_url] อ่านเนื้อหาไม่สำเร็จ: {e}"),
     };
     if body.as_bytes().contains(&0) {
-        return format!("[read_url] {url} — ดูเหมือนไม่ใช่หน้าเว็บ HTML (อาจเป็น PDF/ไฟล์ไบนารี) อ่านเป็นข้อความไม่ได้");
+        return format!(
+            "[read_url] {url} — ดูเหมือนไม่ใช่หน้าเว็บ HTML (อาจเป็น PDF/ไฟล์ไบนารี) อ่านเป็นข้อความไม่ได้"
+        );
     }
     let text = html_to_text(&body);
     let text = collapse_ws(&text);
@@ -844,7 +915,10 @@ fn read_url(args: &Value) -> String {
     let clipped = truncate_chars(&text, max);
     out.push_str(&clipped);
     if text.len() > max {
-        out.push_str(&format!("\n… (เหลืออีก {} ตัวอักษร ใช้ max_chars มากขึ้นเพื่ออ่านเพิ่ม)", text.len() - max));
+        out.push_str(&format!(
+            "\n… (เหลืออีก {} ตัวอักษร ใช้ max_chars มากขึ้นเพื่ออ่านเพิ่ม)",
+            text.len() - max
+        ));
     }
     out
 }
@@ -888,9 +962,32 @@ fn html_to_text(html: &str) -> String {
 
 fn is_block_tag(lower: &str) -> bool {
     const BLOCKS: &[&str] = &[
-        "</p", "</div", "</li", "</ul", "</ol", "</h1", "</h2", "</h3", "</h4", "</h5", "</h6",
-        "</tr", "</table", "</section", "</article", "</header", "</footer", "</main", "</pre",
-        "<br", "</td", "</th", "</blockquote", "</figure", "</nav", "</form",
+        "</p",
+        "</div",
+        "</li",
+        "</ul",
+        "</ol",
+        "</h1",
+        "</h2",
+        "</h3",
+        "</h4",
+        "</h5",
+        "</h6",
+        "</tr",
+        "</table",
+        "</section",
+        "</article",
+        "</header",
+        "</footer",
+        "</main",
+        "</pre",
+        "<br",
+        "</td",
+        "</th",
+        "</blockquote",
+        "</figure",
+        "</nav",
+        "</form",
     ];
     BLOCKS.iter().any(|b| lower.starts_with(b))
 }
@@ -970,7 +1067,10 @@ pub fn list_skills_structured() -> Vec<serde_json::Value> {
 pub fn load_skill_content(name: &str) -> Option<String> {
     let lower = name.to_lowercase();
     for base in skill_dirs() {
-        let candidates = [base.join(name).join("SKILL.md"), base.join(&lower).join("SKILL.md")];
+        let candidates = [
+            base.join(name).join("SKILL.md"),
+            base.join(&lower).join("SKILL.md"),
+        ];
         for sp in candidates {
             if sp.is_file() {
                 return fs::read_to_string(&sp).ok();
@@ -1016,7 +1116,10 @@ fn open_preview(args: &Value) -> String {
         if let Err(e) = fs::write("preview/index.html", h) {
             return format!("[open_preview] เขียน preview/index.html ไม่สำเร็จ: {e}");
         }
-        (std::path::PathBuf::from("preview"), "index.html".to_string())
+        (
+            std::path::PathBuf::from("preview"),
+            "index.html".to_string(),
+        )
     } else if let Some(p) = path {
         let pb = Path::new(p);
         if pb.is_file() {
@@ -1105,7 +1208,12 @@ fn serve_one(mut stream: TcpStream, root: &Path) {
     }
     if full.is_dir() {
         let listing = dir_listing(&full);
-        respond(&mut stream, 200, "text/html; charset=utf-8", listing.as_bytes());
+        respond(
+            &mut stream,
+            200,
+            "text/html; charset=utf-8",
+            listing.as_bytes(),
+        );
         return;
     }
     match fs::read(&full) {
@@ -1118,9 +1226,19 @@ fn serve_one(mut stream: TcpStream, root: &Path) {
             // ไฟล์ไม่เจอ — ถ้าเป็นหน้าที่หลัก (root/index) ให้แสดงรายการไฟล์แทน
             if rel == "index.html" || rel.is_empty() {
                 let listing = dir_listing(root);
-                respond(&mut stream, 200, "text/html; charset=utf-8", listing.as_bytes());
+                respond(
+                    &mut stream,
+                    200,
+                    "text/html; charset=utf-8",
+                    listing.as_bytes(),
+                );
             } else {
-                respond(&mut stream, 404, "text/plain", format!("404 Not Found: {rel}").as_bytes());
+                respond(
+                    &mut stream,
+                    404,
+                    "text/plain",
+                    format!("404 Not Found: {rel}").as_bytes(),
+                );
             }
         }
     }
@@ -1133,7 +1251,11 @@ fn first_html(dir: &Path) -> String {
             .flatten()
             .filter(|e| {
                 e.file_type().map(|t| t.is_file()).unwrap_or(false)
-                    && e.path().extension().and_then(|x| x.to_str()).map(|x| x.eq_ignore_ascii_case("html") || x.eq_ignore_ascii_case("htm")).unwrap_or(false)
+                    && e.path()
+                        .extension()
+                        .and_then(|x| x.to_str())
+                        .map(|x| x.eq_ignore_ascii_case("html") || x.eq_ignore_ascii_case("htm"))
+                        .unwrap_or(false)
             })
             .map(|e| e.file_name().to_string_lossy().to_string())
             .collect();
@@ -1168,7 +1290,11 @@ fn dir_listing(dir: &Path) -> String {
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
             let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-            let label = if is_dir { format!("{name}/") } else { name.clone() };
+            let label = if is_dir {
+                format!("{name}/")
+            } else {
+                name.clone()
+            };
             items.push_str(&format!("<li><a href=\"{label}\">{label}</a></li>\n"));
         }
     }
@@ -1255,7 +1381,14 @@ fn list_skills() -> String {
                 continue;
             }
             found += 1;
-            out.push_str(&format!("  • {name} — {}\n", if desc.is_empty() { "(ไม่มีคำอธิบาย)" } else { &desc }));
+            out.push_str(&format!(
+                "  • {name} — {}\n",
+                if desc.is_empty() {
+                    "(ไม่มีคำอธิบาย)"
+                } else {
+                    &desc
+                }
+            ));
         }
     }
     if found == 0 {
@@ -1281,7 +1414,12 @@ fn load_skill(args: &Value) -> String {
                 continue;
             }
             return match fs::read_to_string(&sp) {
-                Ok(t) => format!("[load_skill] '{name}' (จาก {})\n{}\n{}", sp.display(), "---".repeat(30), t),
+                Ok(t) => format!(
+                    "[load_skill] '{name}' (จาก {})\n{}\n{}",
+                    sp.display(),
+                    "---".repeat(30),
+                    t
+                ),
                 Err(e) => format!("[load_skill] อ่าน {sp:?} ไม่สำเร็จ: {e}"),
             };
         }
@@ -1293,7 +1431,12 @@ fn load_skill(args: &Value) -> String {
                         let sp = e.path().join("SKILL.md");
                         if sp.is_file() {
                             return match fs::read_to_string(&sp) {
-                                Ok(t) => format!("[load_skill] '{name}' (จาก {})\n{}\n{}", sp.display(), "---".repeat(30), t),
+                                Ok(t) => format!(
+                                    "[load_skill] '{name}' (จาก {})\n{}\n{}",
+                                    sp.display(),
+                                    "---".repeat(30),
+                                    t
+                                ),
                                 Err(e) => format!("[load_skill] อ่าน {sp:?} ไม่สำเร็จ: {e}"),
                             };
                         }

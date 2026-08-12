@@ -1,4 +1,4 @@
-﻿//! Commandblock — ผู้ช่วยพัฒนาโค้ด AI แบบตัวแทน (agentic coding assistant CLI)
+//! Commandblock — ผู้ช่วยพัฒนาโค้ด AI แบบตัวแทน (agentic coding assistant CLI)
 //!
 //! รัน: Commandblock.exe  แล้วพิมพ์งานเป็นภาษาไทย/อังกฤษ
 //! หรือ: Commandblock.exe "คำถาม/งาน"  สำหรับรันครั้งเดียว (one-shot)
@@ -12,8 +12,9 @@ mod gui;
 mod llm;
 
 use commandblock::connector;
-use commandblock::update;
+use commandblock::remote;
 pub use commandblock::tools;
+use commandblock::update;
 
 use serde_json::{json, Value};
 use std::fs;
@@ -112,6 +113,14 @@ fn main() {
         return;
     }
 
+    if args.iter().any(|arg| arg == "--remote") {
+        if let Err(error) = remote::launch_sidecar() {
+            eprintln!("Remote Desktop: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let cli_mode = args.iter().any(|a| a == "--cli");
     let one_shot = args.len() >= 2 && !cli_mode && !args[1].starts_with('-') && args[1] != "--gui";
 
@@ -123,7 +132,8 @@ fn main() {
         .build();
     // ตรวจหา Ollama ที่ localhost:11434 เสมอ (ไม่เกี่ยวกับ base_url ของ API)
     let ollama_url = config::DEFAULT_OLLAMA_URL.to_string();
-    let ollama_up = cfg.backend != config::Backend::Offline && llm::ollama_reachable(&agent, &ollama_url);
+    let ollama_up =
+        cfg.backend != config::Backend::Offline && llm::ollama_reachable(&agent, &ollama_url);
     let picked_model = if ollama_up {
         llm::pick_model(&agent, &ollama_url)
     } else {
@@ -147,7 +157,11 @@ fn main() {
     println!(
         "แบ็กเอนด์: {} | model: {} {}",
         eff.backend.label(),
-        if eff.model.is_empty() { "-" } else { &eff.model },
+        if eff.model.is_empty() {
+            "-"
+        } else {
+            &eff.model
+        },
         key_note
     );
     if eff.backend == config::Backend::Offline {
@@ -240,15 +254,26 @@ fn main() {
                 "/model" => println!(
                     "แบ็กเอนด์: {} | base_url: {} | model: {}",
                     eff.backend.label(),
-                    if eff.base_url.is_empty() { "-" } else { &eff.base_url },
-                    if eff.model.is_empty() { "-" } else { &eff.model }
+                    if eff.base_url.is_empty() {
+                        "-"
+                    } else {
+                        &eff.base_url
+                    },
+                    if eff.model.is_empty() {
+                        "-"
+                    } else {
+                        &eff.model
+                    }
                 ),
                 _ => println!("ไม่รู้จักคำสั่ง '{input}' — พิมพ์ /help"),
             }
             continue;
         }
 
-        if input.eq_ignore_ascii_case("exit") || input.eq_ignore_ascii_case("quit") || input == "ออก" {
+        if input.eq_ignore_ascii_case("exit")
+            || input.eq_ignore_ascii_case("quit")
+            || input == "ออก"
+        {
             break;
         }
 
@@ -271,7 +296,10 @@ pub fn load_session() -> Vec<Value> {
         return Vec::new();
     };
     match v {
-        Value::Array(arr) => arr.into_iter().filter(|m| m.get("role").is_some()).collect(),
+        Value::Array(arr) => arr
+            .into_iter()
+            .filter(|m| m.get("role").is_some())
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -344,7 +372,8 @@ pub fn run_turn(
     let mut rounds = 0;
     let mut tools_used = true;
     let mut seen_calls: Vec<(String, Value)> = Vec::new();
-    let mut name_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut name_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut last_tool_result: Option<String> = None;
 
     while tools_used {
@@ -356,20 +385,50 @@ pub fn run_turn(
         }
 
         let use_tools = !matches!(eff.backend, config::Backend::Offline);
-        let schemas = if use_tools { tools::tool_schemas() } else { Vec::new() };
+        let schemas = if use_tools {
+            tools::tool_schemas()
+        } else {
+            Vec::new()
+        };
 
         let sink_rc = std::rc::Rc::new(std::cell::RefCell::new(&mut *sink));
-        let mut content_out = { let s = std::rc::Rc::clone(&sink_rc); move |c: &str| s.borrow_mut().content(c) };
-        let mut think_out = { let s = std::rc::Rc::clone(&sink_rc); move |t: &str| s.borrow_mut().think(t) };
-        let resp = match llm::chat_stream(agent, eff, history, &schemas, &mut content_out, &mut think_out) {
+        let mut content_out = {
+            let s = std::rc::Rc::clone(&sink_rc);
+            move |c: &str| s.borrow_mut().content(c)
+        };
+        let mut think_out = {
+            let s = std::rc::Rc::clone(&sink_rc);
+            move |t: &str| s.borrow_mut().think(t)
+        };
+        let resp = match llm::chat_stream(
+            agent,
+            eff,
+            history,
+            &schemas,
+            &mut content_out,
+            &mut think_out,
+        ) {
             Ok(r) => r,
             Err(e) => {
                 // ถ้า error เกี่ยวกับ tools (บาง endpoint ไม่รองรับ) ลองใหม่แบบไม่มี tools
                 if e.to_lowercase().contains("tools") {
                     let sink_rc2 = std::rc::Rc::new(std::cell::RefCell::new(&mut *sink));
-                    let mut content_out2 = { let s = std::rc::Rc::clone(&sink_rc2); move |c: &str| s.borrow_mut().content(c) };
-                    let mut think_out2 = { let s = std::rc::Rc::clone(&sink_rc2); move |t: &str| s.borrow_mut().think(t) };
-                    match llm::chat_stream(agent, eff, history, &[], &mut content_out2, &mut think_out2) {
+                    let mut content_out2 = {
+                        let s = std::rc::Rc::clone(&sink_rc2);
+                        move |c: &str| s.borrow_mut().content(c)
+                    };
+                    let mut think_out2 = {
+                        let s = std::rc::Rc::clone(&sink_rc2);
+                        move |t: &str| s.borrow_mut().think(t)
+                    };
+                    match llm::chat_stream(
+                        agent,
+                        eff,
+                        history,
+                        &[],
+                        &mut content_out2,
+                        &mut think_out2,
+                    ) {
                         Ok(r) => r,
                         Err(e2) => {
                             sink.note(&e2);
@@ -426,7 +485,9 @@ pub fn run_turn(
             // เนื้อหาถูกพิมพ์ระหว่าง streaming แล้ว — ถ้าไม่มีเนื้อหาเลย ใช้ผลลัพธ์เครื่องมือล่าสุดแทน
             if resp.content.trim().is_empty() {
                 if let Some(f) = last_tool_result.as_deref() {
-                    sink.note(&format!("[CommandBlock] AI ไม่ได้ตอบสรุป แต่ผลลัพธ์ล่าสุดจากเครื่องมือ:\n{f}"));
+                    sink.note(&format!(
+                        "[CommandBlock] AI ไม่ได้ตอบสรุป แต่ผลลัพธ์ล่าสุดจากเครื่องมือ:\n{f}"
+                    ));
                     sink.end_line();
                 }
             }
@@ -468,8 +529,15 @@ pub fn run_turn(
                 // เก็บผลลัพธ์ที่มีข้อมูลจริงไว้ใช้เป็น fallback (ไม่ใช่ update_plan)
                 if matches!(
                     tc.name.as_str(),
-                    "read_file" | "list_directory" | "code_search" | "run_command" | "web_search" | "read_url"
-                        | "open_preview" | "list_skills" | "load_skill"
+                    "read_file"
+                        | "list_directory"
+                        | "code_search"
+                        | "run_command"
+                        | "web_search"
+                        | "read_url"
+                        | "open_preview"
+                        | "list_skills"
+                        | "load_skill"
                 ) {
                     last_tool_result = Some(clipped.clone());
                 }
@@ -492,14 +560,22 @@ fn final_summary(
     sink: &mut dyn TurnSink,
 ) {
     let sink_rc = std::rc::Rc::new(std::cell::RefCell::new(&mut *sink));
-    let mut content_out = { let s = std::rc::Rc::clone(&sink_rc); move |c: &str| s.borrow_mut().content(c) };
-    let mut think_out = { let s = std::rc::Rc::clone(&sink_rc); move |t: &str| s.borrow_mut().think(t) };
+    let mut content_out = {
+        let s = std::rc::Rc::clone(&sink_rc);
+        move |c: &str| s.borrow_mut().content(c)
+    };
+    let mut think_out = {
+        let s = std::rc::Rc::clone(&sink_rc);
+        move |t: &str| s.borrow_mut().think(t)
+    };
     match llm::chat_stream(agent, eff, history, &[], &mut content_out, &mut think_out) {
         Ok(r) => {
             sink.end_line();
             if r.content.trim().is_empty() {
                 if let Some(f) = fallback {
-                    sink.note(&format!("[CommandBlock] AI สรุปไม่ได้ แต่ผลลัพธ์ล่าสุดจากเครื่องมือ:\n{f}"));
+                    sink.note(&format!(
+                        "[CommandBlock] AI สรุปไม่ได้ แต่ผลลัพธ์ล่าสุดจากเครื่องมือ:\n{f}"
+                    ));
                     sink.end_line();
                 }
             }
@@ -516,14 +592,21 @@ fn clip_result(s: &str) -> String {
     while !s.is_char_boundary(start) {
         start += 1;
     }
-    format!("…(ผลลัพธ์ถูกตัดเหลือ {} ตัวอักษร)\n{}", MAX_TOOL_RESULT_IN_HISTORY, &s[start..])
+    format!(
+        "…(ผลลัพธ์ถูกตัดเหลือ {} ตัวอักษร)\n{}",
+        MAX_TOOL_RESULT_IN_HISTORY,
+        &s[start..]
+    )
 }
 
 fn summarize_args(args: &Value) -> String {
     let s = serde_json::to_string(args).unwrap_or_default();
     let mut t = s.trim().to_string();
     if t.len() > 120 {
-        t = format!("{}…", &t[..t.char_indices().nth(120).map(|(i, _)| i).unwrap_or(t.len())]);
+        t = format!(
+            "{}…",
+            &t[..t.char_indices().nth(120).map(|(i, _)| i).unwrap_or(t.len())]
+        );
     }
     t
 }
@@ -533,7 +616,14 @@ fn mask_key(key: &str) -> String {
         return "***".to_string();
     }
     let head: String = key.chars().take(4).collect();
-    let tail: String = key.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect();
+    let tail: String = key
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     format!("{head}…{tail}")
 }
 
@@ -543,10 +633,21 @@ mod protocol_tests {
 
     #[test]
     fn loop_stop_replies_to_every_pending_structured_tool_call() {
-        let mut history = vec![json!({"role": "assistant", "tool_calls": [{"id": "one"}, {"id": "two"}]})];
+        let mut history =
+            vec![json!({"role": "assistant", "tool_calls": [{"id": "one"}, {"id": "two"}]})];
         let calls = vec![
-            llm::ToolCall { id: "one".into(), name: "list_directory".into(), arguments: json!({}), extra: None },
-            llm::ToolCall { id: "two".into(), name: "read_file".into(), arguments: json!({}), extra: None },
+            llm::ToolCall {
+                id: "one".into(),
+                name: "list_directory".into(),
+                arguments: json!({}),
+                extra: None,
+            },
+            llm::ToolCall {
+                id: "two".into(),
+                name: "read_file".into(),
+                arguments: json!({}),
+                extra: None,
+            },
         ];
 
         append_skipped_tool_results(&mut history, &calls);

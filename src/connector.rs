@@ -16,11 +16,17 @@ struct ConnectorSession {
 /// เปิด Connector แบบ console แยกจากแอป GUI เพื่อให้ Windows ส่ง stdin/stdout ได้ถูกต้อง
 pub fn launch_sidecar() -> Result<(), String> {
     let current = std::env::current_exe().map_err(|e| e.to_string())?;
-    let sidecar = current.parent().ok_or_else(|| "หาโฟลเดอร์โปรแกรมไม่พบ".to_string())?.join("commandblock-connector.exe");
+    let sidecar = current
+        .parent()
+        .ok_or_else(|| "หาโฟลเดอร์โปรแกรมไม่พบ".to_string())?
+        .join("commandblock-connector.exe");
     if !sidecar.is_file() {
         return Err("ไม่พบ commandblock-connector.exe — กรุณาอัปเดต CommandBlock ใหม่".to_string());
     }
-    Command::new(sidecar).spawn().map(|_| ()).map_err(|e| format!("เปิด Desktop Connector ไม่สำเร็จ: {e}"))
+    Command::new(sidecar)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("เปิด Desktop Connector ไม่สำเร็จ: {e}"))
 }
 
 pub fn safe_child(root: &Path, requested: &str) -> Result<PathBuf, String> {
@@ -28,7 +34,12 @@ pub fn safe_child(root: &Path, requested: &str) -> Result<PathBuf, String> {
     if requested.trim().is_empty() || relative.is_absolute() {
         return Err("พาธต้องอยู่ภายในโฟลเดอร์ Connector".to_string());
     }
-    if relative.components().any(|part| matches!(part, Component::ParentDir | Component::Prefix(_) | Component::RootDir)) {
+    if relative.components().any(|part| {
+        matches!(
+            part,
+            Component::ParentDir | Component::Prefix(_) | Component::RootDir
+        )
+    }) {
         return Err("ไม่อนุญาตให้เข้าถึงนอกโฟลเดอร์ Connector".to_string());
     }
     Ok(root.join(relative))
@@ -39,9 +50,13 @@ pub fn run(agent: ureq::Agent) -> Result<(), String> {
     println!("ลงชื่อเข้าใช้บัญชีเดียวกับ CommandBlock Web (session นี้จะไม่บันทึกรหัสผ่าน)");
     let email = prompt("อีเมล: ")?;
     let password = rpassword::prompt_password("รหัสผ่าน: ").map_err(|e| e.to_string())?;
-    if password.trim().is_empty() { return Err("ห้ามเว้นว่าง".to_string()); }
+    if password.trim().is_empty() {
+        return Err("ห้ามเว้นว่าง".to_string());
+    }
     let session = sign_in(&agent, &email, &password)?;
-    let mut root = rfd::FileDialog::new().set_title("เลือกโฟลเดอร์สำหรับ CommandBlock Web").pick_folder()
+    let mut root = rfd::FileDialog::new()
+        .set_title("เลือกโฟลเดอร์สำหรับ CommandBlock Web")
+        .pick_folder()
         .ok_or_else(|| "ยกเลิกการเลือกโฟลเดอร์".to_string())?;
     let name = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string());
     let device = create_device(&agent, &session, &name, root_name(&root))?;
@@ -51,16 +66,24 @@ pub fn run(agent: ureq::Agent) -> Result<(), String> {
     loop {
         heartbeat(&agent, &session.token, &device)?;
         if let Some(command) = next_command(&agent, &session.token, &device)? {
-            let id = command.get("id").and_then(Value::as_str).ok_or_else(|| "คำสั่ง Connector ไม่มี id".to_string())?;
+            let id = command
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "คำสั่ง Connector ไม่มี id".to_string())?;
             mark_running(&agent, &session.token, id)?;
             let action = command.get("action").and_then(Value::as_str).unwrap_or("");
             let payload = command.get("payload").unwrap_or(&Value::Null);
             let result = if action == "pick_folder" {
-                match rfd::FileDialog::new().set_title("เปลี่ยนโฟลเดอร์สำหรับ CommandBlock Web").pick_folder() {
+                match rfd::FileDialog::new()
+                    .set_title("เปลี่ยนโฟลเดอร์สำหรับ CommandBlock Web")
+                    .pick_folder()
+                {
                     Some(next_root) => {
                         root = next_root;
                         update_device_root(&agent, &session.token, &device, root_name(&root))?;
-                        Ok(json!({"ok": true, "path": root_name(&root), "root": root_name(&root), "files": count_files(&root)}))
+                        Ok(
+                            json!({"ok": true, "path": root_name(&root), "root": root_name(&root), "files": count_files(&root)}),
+                        )
                     }
                     None => Ok(json!({"ok": false, "cancelled": true})),
                 }
@@ -80,45 +103,97 @@ fn prompt(label: &str) -> Result<String, String> {
     print!("{label}");
     io::stdout().flush().map_err(|e| e.to_string())?;
     let mut value = String::new();
-    io::stdin().read_line(&mut value).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_line(&mut value)
+        .map_err(|e| e.to_string())?;
     let value = value.trim().to_string();
-    if value.is_empty() { Err("ห้ามเว้นว่าง".to_string()) } else { Ok(value) }
+    if value.is_empty() {
+        Err("ห้ามเว้นว่าง".to_string())
+    } else {
+        Ok(value)
+    }
 }
 
 fn sign_in(agent: &ureq::Agent, email: &str, password: &str) -> Result<ConnectorSession, String> {
-    let response: Value = agent.post(&format!("{SUPABASE_URL}/auth/v1/token?grant_type=password"))
-        .set("apikey", SUPABASE_PUBLISHABLE_KEY).set("Content-Type", "application/json")
+    let response: Value = agent
+        .post(&format!("{SUPABASE_URL}/auth/v1/token?grant_type=password"))
+        .set("apikey", SUPABASE_PUBLISHABLE_KEY)
+        .set("Content-Type", "application/json")
         .send_json(json!({"email": email, "password": password}))
-        .map_err(|_| "เข้าสู่ระบบ Connector ไม่สำเร็จ".to_string())?.into_json().map_err(|_| "อ่าน session Connector ไม่สำเร็จ".to_string())?;
-    let token = response.get("access_token").and_then(Value::as_str).map(str::to_string)
+        .map_err(|_| "เข้าสู่ระบบ Connector ไม่สำเร็จ".to_string())?
+        .into_json()
+        .map_err(|_| "อ่าน session Connector ไม่สำเร็จ".to_string())?;
+    let token = response
+        .get("access_token")
+        .and_then(Value::as_str)
+        .map(str::to_string)
         .ok_or_else(|| "บัญชีหรือรหัสผ่านไม่ถูกต้อง".to_string())?;
-    let user_id = response.get("user").and_then(|user| user.get("id")).and_then(Value::as_str).map(str::to_string)
+    let user_id = response
+        .get("user")
+        .and_then(|user| user.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
         .ok_or_else(|| "อ่านข้อมูลผู้ใช้ Connector ไม่สำเร็จ".to_string())?;
     Ok(ConnectorSession { token, user_id })
 }
 
 fn auth<'a>(request: ureq::Request, token: &'a str) -> ureq::Request {
-    request.set("apikey", SUPABASE_PUBLISHABLE_KEY).set("Authorization", &format!("Bearer {token}")).set("Content-Type", "application/json")
+    request
+        .set("apikey", SUPABASE_PUBLISHABLE_KEY)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", "application/json")
 }
 
-fn create_device(agent: &ureq::Agent, session: &ConnectorSession, name: &str, root_name: String) -> Result<String, String> {
-    let rows: Vec<Value> = auth(agent.post(&format!("{SUPABASE_URL}/rest/v1/connector_devices")), &session.token)
-        .set("Prefer", "return=representation")
-        .send_json(json!({"user_id": session.user_id, "name": name, "root_name": root_name}))
-        .map_err(|_| "ลงทะเบียน Desktop Connector ไม่สำเร็จ".to_string())?.into_json().map_err(|_| "อ่านข้อมูล Desktop Connector ไม่สำเร็จ".to_string())?;
-    rows.first().and_then(|row| row.get("id")).and_then(Value::as_str).map(str::to_string)
+fn create_device(
+    agent: &ureq::Agent,
+    session: &ConnectorSession,
+    name: &str,
+    root_name: String,
+) -> Result<String, String> {
+    let rows: Vec<Value> = auth(
+        agent.post(&format!("{SUPABASE_URL}/rest/v1/connector_devices")),
+        &session.token,
+    )
+    .set("Prefer", "return=representation")
+    .send_json(json!({"user_id": session.user_id, "name": name, "root_name": root_name}))
+    .map_err(|_| "ลงทะเบียน Desktop Connector ไม่สำเร็จ".to_string())?
+    .into_json()
+    .map_err(|_| "อ่านข้อมูล Desktop Connector ไม่สำเร็จ".to_string())?;
+    rows.first()
+        .and_then(|row| row.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
         .ok_or_else(|| "ไม่ได้ device id จาก Supabase".to_string())
 }
 
 fn heartbeat(agent: &ureq::Agent, token: &str, device: &str) -> Result<(), String> {
-    auth(agent.patch(&format!("{SUPABASE_URL}/rest/v1/connector_devices?id=eq.{device}")), token)
-        .send_json(json!({"name": std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string())})).map_err(|_| "ส่ง heartbeat ไม่สำเร็จ".to_string())?;
+    auth(
+        agent.patch(&format!(
+            "{SUPABASE_URL}/rest/v1/connector_devices?id=eq.{device}"
+        )),
+        token,
+    )
+    .send_json(
+        json!({"name": std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".to_string())}),
+    )
+    .map_err(|_| "ส่ง heartbeat ไม่สำเร็จ".to_string())?;
     Ok(())
 }
 
-fn update_device_root(agent: &ureq::Agent, token: &str, device: &str, root_name: String) -> Result<(), String> {
-    auth(agent.patch(&format!("{SUPABASE_URL}/rest/v1/connector_devices?id=eq.{device}")), token)
-        .send_json(json!({"root_name": root_name})).map_err(|_| "อัปเดตโฟลเดอร์ Connector ไม่สำเร็จ".to_string())?;
+fn update_device_root(
+    agent: &ureq::Agent,
+    token: &str,
+    device: &str,
+    root_name: String,
+) -> Result<(), String> {
+    auth(
+        agent.patch(&format!(
+            "{SUPABASE_URL}/rest/v1/connector_devices?id=eq.{device}"
+        )),
+        token,
+    )
+    .send_json(json!({"root_name": root_name}))
+    .map_err(|_| "อัปเดตโฟลเดอร์ Connector ไม่สำเร็จ".to_string())?;
     Ok(())
 }
 
@@ -129,14 +204,33 @@ fn next_command(agent: &ureq::Agent, token: &str, device: &str) -> Result<Option
 }
 
 fn mark_running(agent: &ureq::Agent, token: &str, command: &str) -> Result<(), String> {
-    auth(agent.patch(&format!("{SUPABASE_URL}/rest/v1/connector_commands?id=eq.{command}&status=eq.queued")), token)
-        .send_json(json!({"status":"running"})).map_err(|_| "รับคำสั่ง Connector ไม่สำเร็จ".to_string())?;
+    auth(
+        agent.patch(&format!(
+            "{SUPABASE_URL}/rest/v1/connector_commands?id=eq.{command}&status=eq.queued"
+        )),
+        token,
+    )
+    .send_json(json!({"status":"running"}))
+    .map_err(|_| "รับคำสั่ง Connector ไม่สำเร็จ".to_string())?;
     Ok(())
 }
 
-fn finish(agent: &ureq::Agent, token: &str, command: &str, status: &str, result: Option<Value>, error: Option<String>) -> Result<(), String> {
-    auth(agent.patch(&format!("{SUPABASE_URL}/rest/v1/connector_commands?id=eq.{command}")), token)
-        .send_json(json!({"status":status, "result":result, "error":error})).map_err(|_| "ส่งผล Connector ไม่สำเร็จ".to_string())?;
+fn finish(
+    agent: &ureq::Agent,
+    token: &str,
+    command: &str,
+    status: &str,
+    result: Option<Value>,
+    error: Option<String>,
+) -> Result<(), String> {
+    auth(
+        agent.patch(&format!(
+            "{SUPABASE_URL}/rest/v1/connector_commands?id=eq.{command}"
+        )),
+        token,
+    )
+    .send_json(json!({"status":status, "result":result, "error":error}))
+    .map_err(|_| "ส่งผล Connector ไม่สำเร็จ".to_string())?;
     Ok(())
 }
 
@@ -153,32 +247,67 @@ fn execute(action: &str, payload: &Value, root: &Path) -> Result<Value, String> 
         "queue" => Ok(json!({"activity": ["Desktop Connector ออนไลน์"]})),
         "preview" => Ok(json!({"preview_url": ""})),
         "exec" => {
-            let command = payload.get("command").and_then(Value::as_str).unwrap_or("").trim();
-            if command.is_empty() { return Ok(json!({"output":"(ว่าง)"})); }
-            println!("\n⚠️ เว็บขอรันคำสั่งใน {}:\n  {command}\nพิมพ์ yes เพื่ออนุมัติ:", root.display());
-            if prompt("")? != "yes" { return Err("ผู้ใช้ไม่อนุมัติคำสั่งบน Desktop Connector".to_string()); }
-            let output = crate::tools::execute("run_command", &json!({"command": command, "cwd": root, "timeout_seconds": 60}), &mut None);
+            let command = payload
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            if command.is_empty() {
+                return Ok(json!({"output":"(ว่าง)"}));
+            }
+            println!(
+                "\n⚠️ เว็บขอรันคำสั่งใน {}:\n  {command}\nพิมพ์ yes เพื่ออนุมัติ:",
+                root.display()
+            );
+            if prompt("")? != "yes" {
+                return Err("ผู้ใช้ไม่อนุมัติคำสั่งบน Desktop Connector".to_string());
+            }
+            let output = crate::tools::execute(
+                "run_command",
+                &json!({"command": command, "cwd": root, "timeout_seconds": 60}),
+                &mut None,
+            );
             Ok(json!({"output": output}))
         }
         _ => Err("ไม่รองรับคำสั่ง Connector นี้".to_string()),
     }
 }
 
-fn root_name(root: &Path) -> String { root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "โฟลเดอร์โปรเจกต์".to_string()) }
-fn count_files(root: &Path) -> usize { list_files(root).len() }
+fn root_name(root: &Path) -> String {
+    root.file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "โฟลเดอร์โปรเจกต์".to_string())
+}
+fn count_files(root: &Path) -> usize {
+    list_files(root).len()
+}
 fn list_files(root: &Path) -> Vec<String> {
     fn visit(root: &Path, current: &Path, out: &mut Vec<String>) {
-        if out.len() >= 300 { return; }
-        let Ok(entries) = std::fs::read_dir(current) else { return; };
+        if out.len() >= 300 {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(current) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
-            if path.is_dir() { if !matches!(name.as_str(), ".git" | "target" | "node_modules") { visit(root, &path, out); } }
-            else if let Ok(relative) = path.strip_prefix(root) { out.push(relative.to_string_lossy().replace('\\', "/")); }
-            if out.len() >= 300 { break; }
+            if path.is_dir() {
+                if !matches!(name.as_str(), ".git" | "target" | "node_modules") {
+                    visit(root, &path, out);
+                }
+            } else if let Ok(relative) = path.strip_prefix(root) {
+                out.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+            if out.len() >= 300 {
+                break;
+            }
         }
     }
-    let mut out = Vec::new(); visit(root, root, &mut out); out.sort(); out
+    let mut out = Vec::new();
+    visit(root, root, &mut out);
+    out.sort();
+    out
 }
 
 #[cfg(test)]

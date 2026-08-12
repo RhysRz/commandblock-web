@@ -15,3 +15,12 @@ test('remote sessions are owner-scoped, expiring, and limited to view or control
   assert.match(sql, /auth\.uid\(\)\) = user_id/i);
   assert.match(sql, /where status in \('requested', 'accepted', 'connected'\)/i);
 });
+
+test('remote client keeps the peer-to-peer safety boundary visible', () => {
+  const remote = fs.readFileSync(path.join(__dirname, '..', 'src', 'remote.rs'), 'utf8');
+  assert.match(remote, /REMOTE_SESSION_TTL/);
+  assert.match(remote, /MessageDialog/);
+  assert.match(remote, /mode == "control"/);
+  assert.match(remote, /stun:stun\.l\.google\.com:19302/);
+  assert.match(remote, /max_frame_bytes/);
+});

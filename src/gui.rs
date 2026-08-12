@@ -1,4 +1,4 @@
-﻿//! GUI ของ Commandblock — เซิร์ฟเวอร์ local + หน้าแชทในเบราว์เซอร์ (หน้าตาเหมือนแชท AI)
+//! GUI ของ Commandblock — เซิร์ฟเวอร์ local + หน้าแชทในเบราว์เซอร์ (หน้าตาเหมือนแชท AI)
 //!
 //! Commandblock.exe (ไม่มีอาร์กิวเมนต์) → รันเซิร์ฟเวอร์นี้แล้วเปิดเบราว์เซอร์อัตโนมัติ
 //! - GET  /            หน้าแชท (ui.html)
@@ -21,18 +21,18 @@ const STARTUP_LOG_MAX: usize = 60; // เก็บประวัติสูง
 struct Shared {
     history: Vec<Value>,
     plan: Option<String>,
-    eff: config::Effective,          // ค่าฐานจาก config.json
+    eff: config::Effective,              // ค่าฐานจาก config.json
     cfg_models: Vec<config::ModelEntry>, // รายการโมเดลจาก config.json
-    model: String,                   // โมเดลที่กำลังใช้ (สลับได้ runtime)
-    base_url: String,                // base_url ที่กำลังใช้ (สลับได้ runtime)
+    model: String,                       // โมเดลที่กำลังใช้ (สลับได้ runtime)
+    base_url: String,                    // base_url ที่กำลังใช้ (สลับได้ runtime)
     // Project settings (Project settings modal → .freebuff/settings.json)
-    startup_script: String,          // คำสั่งที่รันเทิร์นแรกของแต่ละวัน
-    startup_last_run: String,        // วันที่ (YYYY-MM-DD) ที่รันล่าสุด — จดใน settings.json
-    startup_note: Option<String>,    // ผลลัพธ์ของ startup script (ใส่ลง system prompt)
-    skills: Vec<String>,             // ทักษะที่เปิดใช้ (preloaded) — SKILL.md ถูกใส่ลง system prompt
-    scan_context: Option<String>,    // บริบทโฟลเดอร์ที่ผู้ใช้เปิด (อ่านทั้งโฟลเดอร์)
-    folder_name: String,             // ชื่อโฟลเดอร์ปัจจุบัน (แสดงใต้ช่องส่ง) — เริ่มจากโฟลเดอร์โปรเจกต์
-    folder_path: String,             // พาธเต็มของโฟลเดอร์ปัจจุบัน
+    startup_script: String,       // คำสั่งที่รันเทิร์นแรกของแต่ละวัน
+    startup_last_run: String,     // วันที่ (YYYY-MM-DD) ที่รันล่าสุด — จดใน settings.json
+    startup_note: Option<String>, // ผลลัพธ์ของ startup script (ใส่ลง system prompt)
+    skills: Vec<String>,          // ทักษะที่เปิดใช้ (preloaded) — SKILL.md ถูกใส่ลง system prompt
+    scan_context: Option<String>, // บริบทโฟลเดอร์ที่ผู้ใช้เปิด (อ่านทั้งโฟลเดอร์)
+    folder_name: String,          // ชื่อโฟลเดอร์ปัจจุบัน (แสดงใต้ช่องส่ง) — เริ่มจากโฟลเดอร์โปรเจกต์
+    folder_path: String,          // พาธเต็มของโฟลเดอร์ปัจจุบัน
 }
 
 impl Shared {
@@ -68,12 +68,28 @@ fn load_settings() -> (String, Vec<String>, String) {
     let Ok(v) = serde_json::from_str::<Value>(&text) else {
         return (String::new(), Vec::new(), String::new());
     };
-    let script = v.get("startup_script").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
-    let skills: Vec<String> = v.get("skills")
+    let script = v
+        .get("startup_script")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let skills: Vec<String> = v
+        .get("skills")
         .and_then(|x| x.as_array())
-        .map(|a| a.iter().filter_map(|s| s.as_str().map(|s| s.trim().to_string())).filter(|s| !s.is_empty()).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| s.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
-    let last_run = v.get("startup_last_run").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    let last_run = v
+        .get("startup_last_run")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
     (script, skills, last_run)
 }
 
@@ -109,7 +125,11 @@ fn append_startup_log(date: &str, script: &str, output: &str, ok: bool) {
 fn write_settings(script: &str, skills: &[String], last_run: &str) -> bool {
     let _ = std::fs::create_dir_all(".freebuff");
     let v = json!({ "startup_script": script, "skills": skills, "startup_last_run": last_run });
-    std::fs::write(SETTINGS_FILE, serde_json::to_string_pretty(&v).unwrap_or_default()).is_ok()
+    std::fs::write(
+        SETTINGS_FILE,
+        serde_json::to_string_pretty(&v).unwrap_or_default(),
+    )
+    .is_ok()
 }
 
 /// วัน/เวลาท้องถิ่น (ปี, เดือน, วัน, ชั่วโมง, นาที)
@@ -181,9 +201,7 @@ fn now_hhmm() -> String {
 fn system_with_extras(skills: &[String], scan: Option<&str>, startup: Option<&str>) -> String {
     let mut s = crate::system_prompt();
     if !skills.is_empty() {
-        s.push_str(
-            "\n\n## ทักษะที่เปิดใช้งาน (Preloaded skills)\n"
-        );
+        s.push_str("\n\n## ทักษะที่เปิดใช้งาน (Preloaded skills)\n");
         s.push_str("ผู้ใช้เปิดใช้ทักษะเหล่านี้อยู่ — อ่านและปฏิบัติตามคำแนะนำของมันโดยอัตโนมัติเมื่องานเกี่ยวข้อง (ห้ามโหลดซ้ำด้วย load_skill):\n");
         for name in skills {
             let content = tools::load_skill_content(name)
@@ -194,7 +212,9 @@ fn system_with_extras(skills: &[String], scan: Option<&str>, startup: Option<&st
     }
     if let Some(ctx) = scan {
         if !ctx.trim().is_empty() {
-            s.push_str(&format!("\n\n## บริบทโฟลเดอร์ที่ผู้ใช้เปิด (อ่านทั้งโฟลเดอร์แล้ว)\n{ctx}\n"));
+            s.push_str(&format!(
+                "\n\n## บริบทโฟลเดอร์ที่ผู้ใช้เปิด (อ่านทั้งโฟลเดอร์แล้ว)\n{ctx}\n"
+            ));
         }
     }
     if let Some(n) = startup {
@@ -228,7 +248,13 @@ fn walk_folder_files(root: &std::path::Path) -> Vec<Value> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    fn walk(dir: &std::path::Path, prefix: &str, root_name: &str, out: &mut Vec<Value>, depth: usize) {
+    fn walk(
+        dir: &std::path::Path,
+        prefix: &str,
+        root_name: &str,
+        out: &mut Vec<Value>,
+        depth: usize,
+    ) {
         if out.len() >= MAX_FILES || depth > 8 {
             return;
         }
@@ -287,8 +313,16 @@ fn build_scan_context(files: &[Value]) -> (String, String, usize, usize) {
     let mut total_chars = 0usize;
     let mut in_project = false;
     for f in files.iter().take(MAX_FILES) {
-        let p = f.get("path").and_then(|x| x.as_str()).unwrap_or("").to_string();
-        let c = f.get("content").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let p = f
+            .get("path")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let c = f
+            .get("content")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         if p.is_empty() {
             continue;
         }
@@ -328,13 +362,21 @@ fn build_scan_context(files: &[Value]) -> (String, String, usize, usize) {
     let mut out = String::new();
     out.push_str(&format!(
         "โฟลเดอร์: {} — อ่านแล้ว {} ไฟล์ (เนื้อหา {} ตัวอักษร)\n",
-        if root.is_empty() { "(ไม่ทราบชื่อ)" } else { &root },
+        if root.is_empty() {
+            "(ไม่ทราบชื่อ)"
+        } else {
+            &root
+        },
         paths.len(),
         total_chars
     ));
     out.push_str(&format!(
         "อยู่ในโปรเจกต์ปัจจุบัน: {} — แก้ไฟล์ในโฟลเดอร์นี้ได้ด้วยพาธสัมพัทธ์ (อ่านไฟล์ก่อนแก้เสมอ)\n",
-        if in_project { "ใช่" } else { "ไม่ (อ่านเป็นบริบทอย่างเดียว — การแก้ไฟล์ทำงานในโฟลเดอร์โปรเจกต์ปัจจุบัน)" }
+        if in_project {
+            "ใช่"
+        } else {
+            "ไม่ (อ่านเป็นบริบทอย่างเดียว — การแก้ไฟล์ทำงานในโฟลเดอร์โปรเจกต์ปัจจุบัน)"
+        }
     ));
     out.push_str("\nรายการไฟล์ทั้งหมด:\n");
     for p in &paths {
@@ -351,7 +393,11 @@ fn build_scan_context(files: &[Value]) -> (String, String, usize, usize) {
 
 /// รัน GUI เป็นแอปเดสก์ท็อปจริง (หน้าต่างของระบบ ไม่ใช่แท็บเบราว์เซอร์)
 /// เซิร์ฟเวอร์ local รันใน thread พื้นหลัง — หน้าต่างปิด = ปิดโปรแกรม
-pub fn serve(agent: ureq::Agent, eff: &config::Effective, cfg_models: Vec<config::ModelEntry>) -> ! {
+pub fn serve(
+    agent: ureq::Agent,
+    eff: &config::Effective,
+    cfg_models: Vec<config::ModelEntry>,
+) -> ! {
     let (listener, port) = bind_free();
     let url = format!("http://127.0.0.1:{port}/");
 
@@ -473,7 +519,12 @@ fn run_desktop_window(url: &str) -> Result<(), String> {
             self.webview = Some(webview);
         }
 
-        fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        fn window_event(
+            &mut self,
+            event_loop: &ActiveEventLoop,
+            _id: WindowId,
+            event: WindowEvent,
+        ) {
             if let WindowEvent::CloseRequested = event {
                 event_loop.exit();
             }
@@ -501,11 +552,9 @@ fn user_data_dir() -> Option<std::path::PathBuf> {
 
 /// โหลดไอคอน Command Block สีส้มจาก PNG ที่ฝังมากับโปรแกรม
 fn build_icon() -> Option<winit::window::Icon> {
-    let image = image::load_from_memory_with_format(
-        COMMAND_BLOCK_ICON_PNG,
-        image::ImageFormat::Png,
-    )
-    .ok()?;
+    let image =
+        image::load_from_memory_with_format(COMMAND_BLOCK_ICON_PNG, image::ImageFormat::Png)
+            .ok()?;
     let (width, height) = image.dimensions();
     winit::window::Icon::from_rgba(image.to_rgba8().into_raw(), width, height).ok()
 }
@@ -592,7 +641,12 @@ fn handle(
 
     let mut out = BufWriter::new(stream);
     match (method.as_str(), path) {
-        ("GET", "/") => respond(&mut out, 200, "text/html; charset=utf-8", UI_HTML.as_bytes()),
+        ("GET", "/") => respond(
+            &mut out,
+            200,
+            "text/html; charset=utf-8",
+            UI_HTML.as_bytes(),
+        ),
         ("GET", "/assets/buff-command-block.png") => {
             respond(&mut out, 200, "image/png", COMMAND_BLOCK_ICON_PNG)
         }
@@ -613,11 +667,21 @@ fn handle(
                 "folder": g.folder_name.clone(),
                 "folder_path": g.folder_path.clone(),
             });
-            respond(&mut out, 200, "application/json", state.to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                state.to_string().as_bytes(),
+            );
         }
         ("GET", "/api/models") => {
             let list = build_models_list(agent, &shared);
-            respond(&mut out, 200, "application/json", json!({ "models": list }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "models": list }).to_string().as_bytes(),
+            );
         }
         ("POST", "/api/model") => {
             let sel = serde_json::from_str::<Value>(&body_str)
@@ -635,7 +699,11 @@ fn handle(
                 g.model = sel.clone();
                 g.base_url = f["base_url"].as_str().unwrap_or("").to_string();
                 // ถ้าโมเดลนั้นมี api_key ของตัวเอง (เช่น Gemini/Groq) → ใช้ key นั้นแทน key หลัก
-                if let Some(cm) = g.cfg_models.iter().find(|m| m.name == sel && m.base_url == g.base_url) {
+                if let Some(cm) = g
+                    .cfg_models
+                    .iter()
+                    .find(|m| m.name == sel && m.base_url == g.base_url)
+                {
                     if !cm.api_key.is_empty() {
                         g.eff.api_key = cm.api_key.clone();
                     }
@@ -649,7 +717,14 @@ fn handle(
                 }
                 g.eff.backend = config::Backend::OpenAI;
             } else {
-                respond(&mut out, 400, "application/json", json!({"ok": false, "error": "ไม่พบโมเดล" }).to_string().as_bytes());
+                respond(
+                    &mut out,
+                    400,
+                    "application/json",
+                    json!({"ok": false, "error": "ไม่พบโมเดล" })
+                        .to_string()
+                        .as_bytes(),
+                );
                 return;
             }
             let cur = g.current_eff();
@@ -663,25 +738,46 @@ fn handle(
                 .filter(|m| m["role"] == "user")
                 .filter_map(|m| m["content"].as_str().map(|s| s.to_string()))
                 .collect();
-            respond(&mut out, 200, "application/json", json!({ "prompts": prompts }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "prompts": prompts }).to_string().as_bytes(),
+            );
         }
         ("GET", "/api/files") => {
             let files = list_project_files();
-            respond(&mut out, 200, "application/json", json!({ "files": files }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "files": files }).to_string().as_bytes(),
+            );
         }
         ("GET", "/api/read") => {
-            let path = path_q.split('?').nth(1).map(|q| {
-                q.split('&')
-                    .find(|kv| kv.starts_with("path="))
-                    .map(|kv| percent_decode_gui(&kv[5..]))
-                    .unwrap_or_default()
-            }).unwrap_or_default();
+            let path = path_q
+                .split('?')
+                .nth(1)
+                .map(|q| {
+                    q.split('&')
+                        .find(|kv| kv.starts_with("path="))
+                        .map(|kv| percent_decode_gui(&kv[5..]))
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
             let result = if path.is_empty() {
                 "ต้องระบุ path".to_string()
             } else {
                 tools::execute("read_file", &json!({ "path": path }), &mut None)
             };
-            respond(&mut out, 200, "application/json", json!({ "path": path, "content": result }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "path": path, "content": result })
+                    .to_string()
+                    .as_bytes(),
+            );
         }
         ("GET", "/api/changes") => {
             let changed = tools::CHANGED_FILES.lock().unwrap().clone();
@@ -696,15 +792,30 @@ fn handle(
                     })
                 })
                 .collect();
-            respond(&mut out, 200, "application/json", json!({ "changes": changes }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "changes": changes }).to_string().as_bytes(),
+            );
         }
         ("GET", "/api/queue") => {
             let activity = tools::ACTIVITY.lock().unwrap().clone();
-            respond(&mut out, 200, "application/json", json!({ "activity": activity }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "activity": activity }).to_string().as_bytes(),
+            );
         }
         ("GET", "/api/notes") => {
             let notes = std::fs::read_to_string("notes.md").unwrap_or_default();
-            respond(&mut out, 200, "application/json", json!({ "notes": notes }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "notes": notes }).to_string().as_bytes(),
+            );
         }
         ("POST", "/api/notes") => {
             let notes = serde_json::from_str::<Value>(&body_str)
@@ -712,7 +823,12 @@ fn handle(
                 .and_then(|v| v["notes"].as_str().map(|s| s.to_string()))
                 .unwrap_or_default();
             let ok = std::fs::write("notes.md", notes).is_ok();
-            respond(&mut out, 200, "application/json", json!({ "saved": ok }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "saved": ok }).to_string().as_bytes(),
+            );
         }
         ("GET", "/api/settings") => {
             let g = shared.lock().unwrap();
@@ -733,21 +849,42 @@ fn handle(
         }
         ("POST", "/api/settings") => {
             let v: Value = serde_json::from_str(&body_str).unwrap_or(Value::Null);
-            let script = v.get("startup_script").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
-            let skills: Vec<String> = v.get("skills")
+            let script = v
+                .get("startup_script")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let skills: Vec<String> = v
+                .get("skills")
                 .and_then(|x| x.as_array())
-                .map(|a| a.iter().filter_map(|s| s.as_str().map(|s| s.trim().to_string())).filter(|s| !s.is_empty()).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|s| s.as_str().map(|s| s.trim().to_string()))
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
                 .unwrap_or_default();
             let mut g = shared.lock().unwrap();
             let saved = write_settings(&script, &skills, &g.startup_last_run);
             g.startup_script = script;
             g.skills = skills;
             g.rebuild_system();
-            respond(&mut out, 200, "application/json", json!({"ok": saved, "saved": saved}).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({"ok": saved, "saved": saved}).to_string().as_bytes(),
+            );
         }
         ("GET", "/api/startup-log") => {
             let log = load_startup_log();
-            respond(&mut out, 200, "application/json", json!({ "log": log }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "log": log }).to_string().as_bytes(),
+            );
         }
         ("POST", "/api/pick-folder") => {
             // กล่องเลือกโฟลเดอร์แบบ native (ของ Windows — ไม่ใช่ป๊อปอัปเว็บ)
@@ -781,14 +918,23 @@ fn handle(
                         .as_bytes(),
                     );
                 }
-                None => {
-                    respond(&mut out, 200, "application/json", json!({"ok": false, "cancelled": true}).to_string().as_bytes())
-                }
+                None => respond(
+                    &mut out,
+                    200,
+                    "application/json",
+                    json!({"ok": false, "cancelled": true})
+                        .to_string()
+                        .as_bytes(),
+                ),
             }
         }
         ("POST", "/api/scan") => {
             let v: Value = serde_json::from_str(&body_str).unwrap_or(Value::Null);
-            let files = v.get("files").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+            let files = v
+                .get("files")
+                .and_then(|x| x.as_array())
+                .cloned()
+                .unwrap_or_default();
             let (ctx, root, file_count, char_count) = build_scan_context(&files);
             let mut g = shared.lock().unwrap();
             g.scan_context = Some(ctx);
@@ -797,7 +943,9 @@ fn handle(
                 &mut out,
                 200,
                 "application/json",
-                json!({"ok": true, "root": root, "files": file_count, "chars": char_count}).to_string().as_bytes(),
+                json!({"ok": true, "root": root, "files": file_count, "chars": char_count})
+                    .to_string()
+                    .as_bytes(),
             );
         }
         ("POST", "/api/exec") => {
@@ -808,9 +956,18 @@ fn handle(
             let output = if cmd.is_empty() {
                 "(ว่าง)".to_string()
             } else {
-                tools::execute("run_command", &json!({ "command": cmd, "timeout_seconds": 60 }), &mut None)
+                tools::execute(
+                    "run_command",
+                    &json!({ "command": cmd, "timeout_seconds": 60 }),
+                    &mut None,
+                )
             };
-            respond(&mut out, 200, "application/json", json!({ "output": output }).to_string().as_bytes());
+            respond(
+                &mut out,
+                200,
+                "application/json",
+                json!({ "output": output }).to_string().as_bytes(),
+            );
         }
         ("POST", "/api/chat") => handle_chat(&mut out, agent, eff, &body_str, &shared),
         _ => respond(&mut out, 404, "text/plain", b"404 Not Found"),
@@ -836,9 +993,21 @@ fn handle_chat(
         .iter()
         .take(4) // จำกัด 4 รูป/ครั้ง
         .filter_map(|i| {
-            let mime = i.get("mime").and_then(|x| x.as_str()).unwrap_or("image/png").to_string();
-            let data = i.get("data").and_then(|x| x.as_str()).unwrap_or("").to_string();
-            if data.is_empty() { None } else { Some((mime, data)) }
+            let mime = i
+                .get("mime")
+                .and_then(|x| x.as_str())
+                .unwrap_or("image/png")
+                .to_string();
+            let data = i
+                .get("data")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
+            if data.is_empty() {
+                None
+            } else {
+                Some((mime, data))
+            }
         })
         .collect();
     if message.is_empty() && images.is_empty() {
@@ -869,8 +1038,16 @@ fn handle_chat(
         }
         drop(g);
         if should_run {
-            let _ = sse(out, "note", json!({"t": format!("▶ รัน startup script (เทิร์นแรกของวัน): {cmd}")}));
-            let output = tools::execute("run_command", &json!({ "command": cmd, "timeout_seconds": 120 }), &mut None);
+            let _ = sse(
+                out,
+                "note",
+                json!({"t": format!("▶ รัน startup script (เทิร์นแรกของวัน): {cmd}")}),
+            );
+            let output = tools::execute(
+                "run_command",
+                &json!({ "command": cmd, "timeout_seconds": 120 }),
+                &mut None,
+            );
             let ok = output.starts_with("[run_command] รหัสจบ: 0");
             append_startup_log(&today, &cmd, &output, ok); // เก็บประวัติย้อนหลัง
             let mut g = shared.lock().unwrap();
@@ -921,8 +1098,16 @@ fn try_command(message: &str, _eff: &config::Effective, shared: &Mutex<Shared>) 
         "/model" => format!(
             "แบ็กเอนด์: {} | base_url: {} | model: {}",
             cur.backend.label(),
-            if cur.base_url.is_empty() { "-" } else { &cur.base_url },
-            if cur.model.is_empty() { "-" } else { &cur.model }
+            if cur.base_url.is_empty() {
+                "-"
+            } else {
+                &cur.base_url
+            },
+            if cur.model.is_empty() {
+                "-"
+            } else {
+                &cur.model
+            }
         ),
         "/plan" => match &g.plan {
             Some(p) => format!("แผนงานปัจจุบัน:\n{p}"),
@@ -984,7 +1169,10 @@ fn build_models_list_inner(agent: &ureq::Agent, g: &Shared) -> Vec<Value> {
             m.base_url.clone()
         };
         let active = m.name == cur_model && base == cur_base;
-        if !out.iter().any(|x| x["name"] == m.name && x["base_url"] == base) {
+        if !out
+            .iter()
+            .any(|x| x["name"] == m.name && x["base_url"] == base)
+        {
             out.push(json!({
                 "name": m.name,
                 "base_url": base,
@@ -996,7 +1184,10 @@ fn build_models_list_inner(agent: &ureq::Agent, g: &Shared) -> Vec<Value> {
     // 2) โมเดล Ollama ในเครื่อง (ตรวจอัตโนมัติ)
     if let Some(list) = ollama_models(agent) {
         for (name, base) in list {
-            if out.iter().any(|x| x["name"] == name && x["base_url"] == base) {
+            if out
+                .iter()
+                .any(|x| x["name"] == name && x["base_url"] == base)
+            {
                 continue;
             }
             out.push(json!({
@@ -1021,8 +1212,15 @@ fn build_models_list_inner(agent: &ureq::Agent, g: &Shared) -> Vec<Value> {
 
 /// ดึงรายชื่อโมเดลที่ติดตั้งใน Ollama (localhost)
 fn ollama_models(agent: &ureq::Agent) -> Option<Vec<(String, String)>> {
-    let url = format!("{}/models", config::DEFAULT_OLLAMA_URL.trim_end_matches('/'));
-    let resp = agent.get(&url).timeout(std::time::Duration::from_secs(6)).call().ok()?;
+    let url = format!(
+        "{}/models",
+        config::DEFAULT_OLLAMA_URL.trim_end_matches('/')
+    );
+    let resp = agent
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(6))
+        .call()
+        .ok()?;
     let text = resp.into_string().ok()?;
     let v: Value = serde_json::from_str(&text).ok()?;
     let mut out = Vec::new();
@@ -1064,7 +1262,11 @@ impl TurnSink for SseSink<'_> {
     }
     fn tools_begin(&mut self) {}
     fn tool(&mut self, name: &str, args: &Value) {
-        let _ = sse(self.out, "tool", json!({"name": name, "args": args.to_string()}));
+        let _ = sse(
+            self.out,
+            "tool",
+            json!({"name": name, "args": args.to_string()}),
+        );
     }
     fn note(&mut self, msg: &str) {
         let _ = sse(self.out, "note", json!({"t": msg}));
@@ -1114,9 +1316,27 @@ fn find_subslice(hay: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 const FILE_SKIP_DIRS: &[&str] = &[
-    ".git", "node_modules", "target", "dist", "build", "vendor", ".venv", "venv",
-    "__pycache__", ".next", ".nuxt", ".freebuff", ".idea", ".vscode", ".cache",
-    "preview", "out", "bin", "obj", ".pytest_cache", "coverage",
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "vendor",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".next",
+    ".nuxt",
+    ".freebuff",
+    ".idea",
+    ".vscode",
+    ".cache",
+    "preview",
+    "out",
+    "bin",
+    "obj",
+    ".pytest_cache",
+    "coverage",
 ];
 
 /// ไล่รายการไฟล์ในโปรเจกต์ (ข้ามโฟลเดอร์ใหญ่) — สำหรับแท็บ Files
@@ -1130,7 +1350,10 @@ fn list_project_files() -> Vec<String> {
         };
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
-            if FILE_SKIP_DIRS.contains(&name.as_str()) || name.starts_with('.') || name.ends_with(".WebView2") {
+            if FILE_SKIP_DIRS.contains(&name.as_str())
+                || name.starts_with('.')
+                || name.ends_with(".WebView2")
+            {
                 continue;
             }
             let Ok(ft) = e.file_type() else {
