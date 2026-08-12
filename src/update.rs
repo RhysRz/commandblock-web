@@ -191,6 +191,9 @@ fn latest_release() -> Result<Option<Release>, String> {
         .map_err(|e| e.to_string())?
         .into_json()
         .map_err(|e| e.to_string())?;
+    if !release_assets_ready(&response) {
+        return Ok(None);
+    }
     let tag = response
         .get("tag_name")
         .and_then(Value::as_str)
@@ -529,4 +532,52 @@ mod tests {
         assert_eq!(result.unwrap(), "archive");
         assert_eq!(fallback_calls, 1);
     }
+
+    #[test]
+    fn incomplete_release_assets_are_not_offered_for_update() {
+        let release = serde_json::json!({
+            "draft": false,
+            "prerelease": false,
+            "assets": [
+                {"name": "CommandBlock-Windows-x64.zip", "state": "uploaded", "size": 4_096},
+                {"name": "CommandBlock-Windows-x64.zip.sha256", "state": "starter", "size": 0}
+            ]
+        });
+        assert!(!super::release_assets_ready(&release));
+    }
+
+    #[test]
+    fn uploaded_release_assets_are_eligible_for_update() {
+        let release = serde_json::json!({
+            "draft": false,
+            "prerelease": false,
+            "assets": [
+                {"name": "CommandBlock-Windows-x64.zip", "state": "uploaded", "size": 4_096, "browser_download_url": "https://example.com/app.zip"},
+                {"name": "CommandBlock-Windows-x64.zip.sha256", "state": "uploaded", "size": 64, "browser_download_url": "https://example.com/app.zip.sha256"}
+            ]
+        });
+        assert!(super::release_assets_ready(&release));
+    }
+}
+
+fn release_assets_ready(release: &Value) -> bool {
+    if release.get("draft").and_then(Value::as_bool) != Some(false)
+        || release.get("prerelease").and_then(Value::as_bool) != Some(false)
+    {
+        return false;
+    }
+    let Some(assets) = release.get("assets").and_then(Value::as_array) else {
+        return false;
+    };
+    [PACKAGE, CHECKSUM].into_iter().all(|name| {
+        assets.iter().any(|asset| {
+            asset.get("name").and_then(Value::as_str) == Some(name)
+                && asset.get("state").and_then(Value::as_str) == Some("uploaded")
+                && asset.get("size").and_then(Value::as_u64).unwrap_or(0) > 0
+                && asset
+                    .get("browser_download_url")
+                    .and_then(Value::as_str)
+                    .is_some_and(|url| !url.is_empty())
+        })
+    })
 }

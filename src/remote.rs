@@ -3,7 +3,6 @@
 //! Supabase ใช้เก็บเฉพาะ SDP สำหรับจับคู่ WebRTC ชั่วคราวเท่านั้น ภาพหน้าจอและ
 //! คำสั่งควบคุมเดินทางใน DataChannel ที่เข้ารหัสของ WebRTC โดยตรง
 use base64::Engine;
-use bytes::BytesMut;
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use futures::FutureExt;
 use image::{DynamicImage, ImageBuffer, Rgba};
@@ -748,15 +747,15 @@ async fn send_frame(
     );
     dc.send_text(&json!({"type":"frame","id":id,"width":width,"height":height,"chunks":chunks.len(),"max_frame_bytes":FRAME_CHUNK_BYTES}).to_string()).await.map_err(|e| e.to_string())?;
     for (index, data) in chunks.into_iter().enumerate() {
-        dc.send(BytesMut::from(
-            json!({"type":"frame_chunk","id":id,"index":index,"data":data})
-                .to_string()
-                .as_bytes(),
-        ))
+        dc.send_text(&frame_chunk_message(&id, index, data))
         .await
         .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+fn frame_chunk_message(id: &str, index: usize, data: &str) -> String {
+    json!({"type":"frame_chunk","id":id,"index":index,"data":data}).to_string()
 }
 
 fn frame_chunk_count(frame_bytes: usize) -> usize {
@@ -878,5 +877,15 @@ mod tests {
         let init = super::remote_channel_init();
         assert!(init.ordered);
         assert_eq!(init.negotiated, Some(0));
+    }
+
+    #[test]
+    fn screen_frame_chunks_use_text_json_for_mobile_browsers() {
+        let message = super::frame_chunk_message("frame-1", 2, "QUJD");
+        let parsed: serde_json::Value = serde_json::from_str(&message).unwrap();
+        assert_eq!(parsed["type"], "frame_chunk");
+        assert_eq!(parsed["id"], "frame-1");
+        assert_eq!(parsed["index"], 2);
+        assert_eq!(parsed["data"], "QUJD");
     }
 }
