@@ -29,6 +29,7 @@ Name: "ollamasignin"; Description: "เข้าสู่ระบบ Ollama (�
 
 [Files]
 Source: "..\Commandblock.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\commandblock-connector.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docs\SETUP-GUIDE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "config-template.json"; DestDir: "{userappdata}\Commandblock"; DestName: "config.json"; Flags: onlyifdoesntexist ignoreversion
 Source: "payload\ollama\OllamaSetup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall ignoreversion

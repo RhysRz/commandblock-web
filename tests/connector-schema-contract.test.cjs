@@ -18,15 +18,12 @@ test('connector relay schema scopes devices and commands to their owning user', 
   assert.match(sql, /where status = 'queued'/i);
 });
 
-test('connector mode prepares a Windows console before asking for credentials', () => {
+test('GUI executable starts the dedicated console connector sidecar', () => {
   const main = fs.readFileSync(path.join(root, 'src', 'main.rs'), 'utf8');
-  const connector = fs.readFileSync(path.join(root, 'src', 'connector.rs'), 'utf8');
+  const sidecarPath = path.join(root, 'src', 'bin', 'commandblock-connector.rs');
+  assert.ok(fs.existsSync(sidecarPath));
+  const sidecar = fs.readFileSync(sidecarPath, 'utf8');
 
-  assert.match(main, /connector::prepare_console\(\);[\s\S]*connector::run\(connector_agent\)/);
-  assert.match(connector, /AttachConsole\(ATTACH_PARENT_PROCESS\)/);
-  assert.match(connector, /AllocConsole\(\)/);
-  assert.match(connector, /CreateFileW\(console_input\.as_ptr\(\)/);
-  assert.match(connector, /SetStdHandle\(STD_INPUT_HANDLE, input\)/);
-  assert.match(connector, /SetStdHandle\(STD_OUTPUT_HANDLE, output\)/);
-  assert.match(connector, /SetStdHandle\(STD_ERROR_HANDLE, output\)/);
+  assert.match(main, /connector::launch_sidecar\(\)/);
+  assert.match(sidecar, /commandblock::connector::run\(agent\)/);
 });

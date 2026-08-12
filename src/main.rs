@@ -9,9 +9,10 @@
 
 mod config;
 mod gui;
-mod connector;
 mod llm;
-mod tools;
+
+use commandblock::connector;
+pub use commandblock::tools;
 
 use serde_json::{json, Value};
 use std::fs;
@@ -99,11 +100,7 @@ fn main() {
     }
 
     if args.iter().any(|arg| arg == "--connector") {
-        connector::prepare_console();
-        let connector_agent = ureq::AgentBuilder::new()
-            .timeout(std::time::Duration::from_secs(30))
-            .build();
-        if let Err(error) = connector::run(connector_agent) {
+        if let Err(error) = connector::launch_sidecar() {
             eprintln!("Desktop Connector: {error}");
             std::process::exit(1);
         }
