@@ -67,6 +67,14 @@
       .insert({ conversation_id: id, user_id: session.user.id, role, content });
     if (error) throw new Error('บันทึกประวัติสนทนาไม่สำเร็จ');
     await client.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', id);
+    return id;
+  }
+  async function conversationMessages(session, id) {
+    const { data, error } = await client.from('messages')
+      .select('role,content,created_at').eq('user_id', session.user.id).eq('conversation_id', id)
+      .order('created_at', { ascending: false }).limit(16);
+    if (error) throw new Error('โหลดบริบทสนทนาไม่สำเร็จ');
+    return (data || []).reverse().map((row) => ({ role: row.role, content: row.content }));
   }
   async function cloudChat(init) {
     try {
@@ -75,11 +83,12 @@
       if (!message?.trim()) return sse([event('note', { t: 'กรุณาพิมพ์ข้อความก่อนส่ง' })], 400);
       const apiKey = sessionKey() || askForKey();
       if (!apiKey) return sse([event('note', { t: 'ต้องใส่ DeepSeek API key ก่อนใช้งาน Cloud chat' })], 400);
-      await saveMessage(session, 'user', message);
+      const id = await saveMessage(session, 'user', message);
+      const messages = await conversationMessages(session, id);
       const response = await originalFetch(`${SUPABASE_URL}/functions/v1/chat`, {
         method: 'POST',
         headers: { authorization: `Bearer ${session.access_token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: MODEL, baseUrl: 'https://api.deepseek.com', apiKey, message }),
+        body: JSON.stringify({ model: MODEL, baseUrl: 'https://api.deepseek.com', apiKey, messages, conversationId: id }),
       });
       const data = await response.json();
       if (!response.ok || data.error) throw new Error(data.error || 'Cloud chat ไม่สำเร็จ');

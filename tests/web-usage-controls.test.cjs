@@ -10,5 +10,6 @@ test('web cloud chat returns provider usage and shows a credit control', () => {
   assert.match(adapter, /data\.usage/);
   assert.match(ui, /usageCredit/);
   assert.match(ui, /platform\.deepseek\.com\/top_up/);
-  assert.match(functionCode, /usage:\s*data\.usage/);
+  assert.match(functionCode, /const usage = data\.usage/);
+  assert.match(functionCode, /usage,\s*\n\s*}\);/);
 });
