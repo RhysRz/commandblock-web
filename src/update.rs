@@ -236,7 +236,11 @@ fn latest_release() -> Result<Option<Release>, String> {
 
 fn stage_release(release: &Release) -> Result<(), String> {
     let bytes = read_package_with_progress(release)?;
-    let expected = String::from_utf8(read_bytes(&release.checksum_url)?)
+    let checksum = with_fetch_retries(
+        || read_bytes(&release.checksum_url),
+        |attempt| std::thread::sleep(retry_delay(attempt)),
+    )?;
+    let expected = String::from_utf8(checksum)
         .map_err(|e| e.to_string())?
         .split_whitespace()
         .next()
@@ -341,6 +345,28 @@ fn read_bytes(url: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+fn with_fetch_retries<T, F, P>(mut fetch: F, mut pause: P) -> Result<T, String>
+where
+    F: FnMut() -> Result<T, String>,
+    P: FnMut(u8),
+{
+    let mut last_error = String::new();
+    for attempt in 0..3 {
+        match fetch() {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                last_error = error;
+                if attempt < 2 {
+                    pause(attempt);
+                }
+            }
+        }
+    }
+    Err(format!(
+        "ดาวน์โหลดไฟล์ตรวจสอบไม่สำเร็จหลังลองใหม่ 3 ครั้ง: {last_error}"
+    ))
+}
+
 fn progress_percent(downloaded: u64, total: Option<u64>) -> Option<u8> {
     total
         .filter(|total| *total > 0)
@@ -399,5 +425,23 @@ mod tests {
         assert_eq!(progress_percent(25, Some(100)), Some(25));
         assert_eq!(progress_percent(125, Some(100)), Some(100));
         assert_eq!(progress_percent(25, None), None);
+    }
+
+    #[test]
+    fn checksum_fetch_retries_until_the_third_attempt() {
+        let mut attempts = 0;
+        let result = super::with_fetch_retries(
+            || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err("Unexpected EOF".to_string())
+                } else {
+                    Ok("checksum")
+                }
+            },
+            |_| {},
+        );
+        assert_eq!(result.unwrap(), "checksum");
+        assert_eq!(attempts, 3);
     }
 }
