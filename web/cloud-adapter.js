@@ -286,6 +286,34 @@
     modal.querySelector('#cb-devices-close').onclick = () => { modal.hidden = true; };
   }
 
+  function mountAccount() {
+    if (document.querySelector('#cb-account-open')) return;
+    const open = document.createElement('button'); open.id = 'cb-account-open'; open.className = 'pill'; open.type = 'button'; open.textContent = 'บัญชี';
+    document.querySelector('.statusbar')?.appendChild(open);
+    const modal = document.createElement('section'); modal.className = 'cb-remote-modal'; modal.hidden = true;
+    modal.innerHTML = '<div class="cb-remote-card" role="dialog" aria-modal="true" aria-label="บัญชี"><div class="cb-remote-row"><div><h2>บัญชีและการใช้งาน</h2><p id="cb-account-email"></p></div><button id="cb-account-close">ปิด</button></div><label>ชื่อที่แสดง <input id="cb-account-name" maxlength="80"></label><div class="cb-remote-actions"><button id="cb-account-save" class="primary">บันทึกชื่อ</button><button id="cb-account-global">ออกจากทุกเครื่อง</button></div><p id="cb-account-usage" class="cb-remote-status"></p></div>';
+    document.body.appendChild(modal);
+    const report = modal.querySelector('#cb-account-usage');
+    async function refresh() {
+      const session = await currentSession();
+      modal.querySelector('#cb-account-email').textContent = session.user.email || '';
+      const [{ data: profile }, { data: usage, error }] = await Promise.all([
+        client.from('profiles').select('display_name').eq('id', session.user.id).maybeSingle(),
+        client.from('usage_events').select('total_tokens,cost_usd,created_at').eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(500),
+      ]);
+      if (error) throw error;
+      modal.querySelector('#cb-account-name').value = profile?.display_name || session.user.user_metadata?.full_name || '';
+      const today = new Date().toDateString(); const month = new Date().getMonth(); const year = new Date().getFullYear();
+      const sum = (rows) => rows.reduce((total, row) => total + Number(row.total_tokens || 0), 0);
+      const rows = usage || []; const daily = rows.filter((row) => new Date(row.created_at).toDateString() === today); const monthly = rows.filter((row) => { const date = new Date(row.created_at); return date.getMonth() === month && date.getFullYear() === year; });
+      report.textContent = `วันนี้ ${sum(daily).toLocaleString()} tokens · เดือนนี้ ${sum(monthly).toLocaleString()} tokens`;
+    }
+    modal.querySelector('#cb-account-save').onclick = async () => { const session = await currentSession(); const display_name = modal.querySelector('#cb-account-name').value.trim(); if (!display_name) return; const { error } = await client.from('profiles').upsert({ id: session.user.id, display_name }); report.textContent = error ? error.message : 'บันทึกชื่อแล้ว'; };
+    modal.querySelector('#cb-account-global').onclick = async () => { if (!window.confirm('ออกจากระบบทุกเครื่อง?')) return; const { error } = await client.auth.signOut({ scope: 'global' }); if (error) { report.textContent = error.message; return; } location.reload(); };
+    modal.querySelector('#cb-account-close').onclick = () => { modal.hidden = true; };
+    open.onclick = async () => { modal.hidden = false; await refresh().catch((error) => { report.textContent = error.message || 'โหลดบัญชีไม่ได้'; }); };
+  }
+
   function mountAuthGate() {
     const style = document.createElement('style');
     style.textContent = `#cb-cloud-gate{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#251044 0,#0d0918 58%,#07060d 100%);color:#f5efff;font-family:"Segoe UI","Noto Sans Thai",sans-serif}#cb-cloud-gate[hidden]{display:none}.cb-cloud-card{width:min(440px,100%);padding:32px;border:1px solid rgba(184,137,255,.35);border-radius:24px;background:rgba(23,14,43,.84);box-shadow:0 28px 80px rgba(0,0,0,.48);backdrop-filter:blur(18px)}.cb-cloud-card h1{margin:0 0 10px;font-size:28px}.cb-cloud-card p{color:#cdbfe8;line-height:1.6}.cb-cloud-card input{width:100%;margin-top:10px;padding:13px 14px;border:1px solid #5b3e84;border-radius:12px;background:#100a20;color:#fff;font:inherit}.cb-cloud-actions{display:grid;gap:10px;margin-top:18px}.cb-cloud-actions button{padding:12px;border:1px solid #7344ba;border-radius:12px;background:#271343;color:#fff;font:inherit;font-weight:700;cursor:pointer}.cb-cloud-actions button.primary{border:0;background:linear-gradient(135deg,#7034df,#a65cff)}.cb-cloud-status{min-height:24px;margin-top:14px;color:#bfeadf;font-size:13px}.cb-cloud-link{background:none!important;border:0!important;color:#c69aff!important;text-decoration:underline;font-weight:400!important}`;
@@ -301,7 +329,7 @@
     const name = gate.querySelector('#cb-cloud-name');
     const report = (message, error = false) => { status.textContent = message; status.style.color = error ? '#ffc2d8' : '#bfeadf'; };
     const errorText = (error) => error?.message === 'Invalid login credentials' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : (error?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
-    const openApp = () => { gate.hidden = true; document.documentElement.classList.remove('cb-auth-pending'); mountRemotePC(); mountDevices(); };
+    const openApp = () => { gate.hidden = true; document.documentElement.classList.remove('cb-auth-pending'); mountRemotePC(); mountDevices(); mountAccount(); };
     const logout = document.createElement('button');
     logout.id = 'cb-cloud-logout';
     logout.className = 'pill';
