@@ -34,6 +34,8 @@ pub trait TurnSink {
     fn note(&mut self, msg: &str);
     /// ผลลัพธ์เครื่องมือ (CLI แสดงขนาด, GUI ข้าม)
     fn result(&mut self, text: &str);
+    /// จำนวน token ของคำขอล่าสุด (จริงจาก provider หรือค่าประมาณ)
+    fn usage(&mut self, _usage: llm::TokenUsage) {}
     /// จบเทิร์นของ LLM (CLI: ขึ้นบรรทัดใหม่ถ้ามีเนื้อหา)
     fn end_line(&mut self);
 }
@@ -444,6 +446,10 @@ pub fn run_turn(
             }
         };
         sink.end_line();
+        sink.usage(
+            resp.usage
+                .unwrap_or_else(|| llm::estimate_usage(history, &resp.content)),
+        );
 
         // เก็บข้อความ assistant (ต้องมี tool_calls เดิมถ้ามี)
         let mut msg = json!({"role": "assistant", "content": resp.content.clone()});

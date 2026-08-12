@@ -329,6 +329,10 @@
   .statusbar .modelbtn .tri { font-size: 9px; color: var(--muted); }
   .statusbar .sp { flex: 1; }
   .statusbar .dot { color: var(--ok); }
+  .usagebar { display:flex; align-items:center; gap:6px; margin-left:auto; min-width:0; }
+  .usagebar button { font:inherit; color:var(--text); border:1px solid var(--border); background:var(--panel2); border-radius:999px; padding:3px 8px; cursor:pointer; white-space:nowrap; }
+  .usagebar #usageTopUp { border-color:rgba(194,140,255,.55); color:#f2eaff; background:rgba(139,108,246,.18); }
+  .usagebar #usageTokens { color:var(--muted); overflow:hidden; text-overflow:ellipsis; }
   .update-notice {
     display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 7px 9px;
     border: 1px solid rgba(166, 109, 255, .48); border-radius: 9px;
@@ -833,6 +837,11 @@
         <div class="modelmenu" id="modelMenu" hidden></div>
       </span>
       <span class="sp"></span>
+      <span class="usagebar" aria-label="เครดิตและ token">
+        <button id="usageCredit" title="ตั้งยอดเครดิต DeepSeek">💳 $0.00 · ≈ ฿0</button>
+        <button id="usageTopUp" title="เปิด DeepSeek Platform">+ เติมเงิน</button>
+        <span id="usageTokens" title="Token ของข้อความล่าสุด">0 tokens</span>
+      </span>
       <span id="statsRight"></span>
     </div>
   </div>
@@ -927,6 +936,36 @@ const wrap = chat.querySelector(".wrap");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 let state = { preview_url: "" };
+
+/* ---------- เครดิต DeepSeek และ token (เก็บเฉพาะเบราว์เซอร์นี้) ---------- */
+const usageKey = "commandblock-usage-v1";
+const usageCredit = document.getElementById("usageCredit");
+const usageTokens = document.getElementById("usageTokens");
+let usageState = (() => { try { return JSON.parse(localStorage.getItem(usageKey)) || {}; } catch (_) { return {}; } })();
+usageState.credit_usd = Number.isFinite(usageState.credit_usd) ? usageState.credit_usd : 0;
+usageState.thb_per_usd = Number.isFinite(usageState.thb_per_usd) ? usageState.thb_per_usd : 36;
+usageState.session_total = Number.isFinite(usageState.session_total) ? usageState.session_total : 0;
+function saveUsage(){ localStorage.setItem(usageKey, JSON.stringify(usageState)); }
+function renderUsage(){
+  usageCredit.textContent = "💳 $" + usageState.credit_usd.toFixed(2) + " · ≈ ฿" + Math.round(usageState.credit_usd * usageState.thb_per_usd).toLocaleString();
+  const last = usageState.last || {total_tokens:0, exact:false};
+  usageTokens.textContent = (last.exact ? "" : "≈ ") + (last.total_tokens || 0).toLocaleString() + " tokens";
+  usageTokens.title = "ล่าสุด: input " + (last.prompt_tokens || 0).toLocaleString() + " · output " + (last.completion_tokens || 0).toLocaleString() + " · session " + usageState.session_total.toLocaleString() + (last.exact ? " (จริงจาก API)" : " (ประมาณการ)");
+}
+usageCredit.addEventListener("click", () => {
+  const credit = Number(window.prompt("เครดิต DeepSeek ปัจจุบัน (USD)", usageState.credit_usd.toFixed(2)));
+  if (Number.isFinite(credit) && credit >= 0) usageState.credit_usd = credit;
+  const rate = Number(window.prompt("อัตราแลกเปลี่ยนโดยประมาณ (THB ต่อ 1 USD)", usageState.thb_per_usd));
+  if (Number.isFinite(rate) && rate > 0) usageState.thb_per_usd = rate;
+  saveUsage(); renderUsage();
+});
+document.getElementById("usageTopUp").addEventListener("click", () => window.open("https://platform.deepseek.com/top_up", "_blank", "noopener"));
+function recordUsage(next){
+  usageState.last = next;
+  usageState.session_total += Number(next.total_tokens) || 0;
+  saveUsage(); renderUsage();
+}
+renderUsage();
 
 /* ---------- clock + state ---------- */
 function tick() {
@@ -1294,6 +1333,7 @@ async function send(){
               turnChanges.set(obj.path,{path:obj.path,status:obj.status||"M",added:(prev?prev.added:0)+(obj.added||0),deleted:(prev?prev.deleted:0)+(obj.deleted||0)});
               renderChangeBox(bub); scrollBottom();
             }
+            else if(ev === "usage" && obj){ recordUsage(obj); }
             else if(ev==="note"&&obj&&obj.t){ cur.insertAdjacentHTML("beforebegin",'<div class="note">'+esc(obj.t)+"</div>"); scrollBottom(); }
           });
         }

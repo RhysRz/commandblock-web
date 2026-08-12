@@ -1367,6 +1367,18 @@ impl TurnSink for SseSink<'_> {
             );
         }
     }
+    fn usage(&mut self, usage: crate::llm::TokenUsage) {
+        let _ = sse(
+            self.out,
+            "usage",
+            json!({
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "exact": usage.exact,
+            }),
+        );
+    }
     fn end_line(&mut self) {}
 }
 

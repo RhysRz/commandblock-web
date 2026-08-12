@@ -22,6 +22,65 @@ pub struct StreamedResult {
     pub content: String,
     pub tool_calls: Vec<ToolCall>,
     pub finish: String,
+    pub usage: Option<TokenUsage>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenUsage {
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub total_tokens: u64,
+    pub exact: bool,
+}
+
+fn parse_usage(value: &Value) -> Option<TokenUsage> {
+    let usage = value.get("usage")?;
+    let prompt_tokens = usage.get("prompt_tokens")?.as_u64()?;
+    let completion_tokens = usage.get("completion_tokens")?.as_u64()?;
+    let total_tokens = usage
+        .get("total_tokens")
+        .and_then(Value::as_u64)
+        .unwrap_or(prompt_tokens.saturating_add(completion_tokens));
+    Some(TokenUsage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        exact: true,
+    })
+}
+
+pub fn estimate_usage(messages: &[Value], completion: &str) -> TokenUsage {
+    let prompt_chars = serde_json::to_string(messages)
+        .unwrap_or_default()
+        .chars()
+        .count() as u64;
+    let completion_chars = completion.chars().count() as u64;
+    let prompt_tokens = prompt_chars.div_ceil(4);
+    let completion_tokens = completion_chars.div_ceil(4);
+    TokenUsage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens: prompt_tokens.saturating_add(completion_tokens),
+        exact: false,
+    }
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::parse_usage;
+    use serde_json::json;
+
+    #[test]
+    fn usage_from_final_stream_event_is_exact() {
+        let usage = parse_usage(&json!({
+            "usage": {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20}
+        }))
+        .expect("usage is present");
+        assert_eq!(usage.prompt_tokens, 12);
+        assert_eq!(usage.completion_tokens, 8);
+        assert_eq!(usage.total_tokens, 20);
+        assert!(usage.exact);
+    }
 }
 
 pub fn ollama_reachable(agent: &ureq::Agent, url: &str) -> bool {
@@ -125,6 +184,9 @@ pub fn chat_stream(
         body["tools"] = json!(tools);
         body["tool_choice"] = json!("auto");
     }
+    if eff.base_url.contains("api.deepseek.com") {
+        body["stream_options"] = json!({"include_usage": true});
+    }
 
     // ลองส่งใหม่ได้ถ้า API ติดชั่วคราว (429/5xx/เน็ตหลุด) — สำคัญมากสำหรับโมเดลฟรีที่ถูกจำกัด rate
     let mut attempt = 0u32;
@@ -182,6 +244,7 @@ pub fn chat_stream(
     // tool_calls แบบ streaming: (id, name, arguments, extra_content) ต่อกันทีละชิ้น
     let mut tool_deltas: Vec<(String, String, String, String)> = Vec::new();
     let mut finish = String::new();
+    let mut usage = None;
 
     let mut line = String::new();
 
@@ -207,6 +270,10 @@ pub fn chat_stream(
         };
         if let Some(err) = v.get("error") {
             return Err(format!("[API] error: {err}"));
+        }
+
+        if let Some(parsed) = parse_usage(&v) {
+            usage = Some(parsed);
         }
 
         let Some(choice) = v.get("choices").and_then(|c| c.get(0)) else {
@@ -310,6 +377,7 @@ pub fn chat_stream(
         content,
         tool_calls,
         finish,
+        usage,
     })
 }
 
