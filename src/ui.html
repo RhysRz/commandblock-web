@@ -1688,7 +1688,7 @@ async function send(){
               const card=document.createElement("div"); card.className="note";
               const button=document.createElement("button"); button.type="button"; button.className="pill";
               button.textContent="▶ ทำต่อจากจุดที่บันทึก";
-              button.onclick=()=>{ input.value="ทำต่อจากจุดที่บันทึกไว้"; autoGrow(); input.focus(); };
+              button.onclick=()=>{ input.value="ทำต่อจากจุดที่บันทึกไว้"; autoGrow(); send(); };
               card.append(document.createTextNode(obj.t+" "),button);
               cur.insertAdjacentElement("beforebegin",card); scrollBottom();
             }
