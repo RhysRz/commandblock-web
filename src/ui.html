@@ -1684,6 +1684,14 @@ async function send(){
               renderChangeBox(bub); scrollBottom();
             }
             else if(ev === "usage" && obj){ recordUsage(obj); }
+            else if(ev === "resume" && obj && obj.t){
+              const card=document.createElement("div"); card.className="note";
+              const button=document.createElement("button"); button.type="button"; button.className="pill";
+              button.textContent="▶ ทำต่อจากจุดที่บันทึก";
+              button.onclick=()=>{ input.value="ทำต่อจากจุดที่บันทึกไว้"; autoGrow(); input.focus(); };
+              card.append(document.createTextNode(obj.t+" "),button);
+              cur.insertAdjacentElement("beforebegin",card); scrollBottom();
+            }
             else if(ev==="note"&&obj&&obj.t){ cur.insertAdjacentHTML("beforebegin",'<div class="note">'+esc(obj.t)+"</div>"); scrollBottom(); }
           });
         }
@@ -1694,7 +1702,8 @@ async function send(){
       scrollBottom();
       loadQueue();
     }catch(e){
-      bub.innerHTML='<div class="txt"><span class="err">เกิดข้อผิดพลาด: '+esc(String(e))+"</span></div>"; scrollBottom();
+      const target = bub || thinking;
+      target.innerHTML='<div class="txt"><span class="err">เกิดข้อผิดพลาด: '+esc(String(e))+"</span></div>"; scrollBottom();
     }finally{ setBusy(false); input.focus(); }
 }
 

@@ -9,6 +9,7 @@
   const ACTIVE_DEVICE_NAME = 'commandblock.active-device-id';
   const originalFetch = window.fetch.bind(window);
   const client = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+  const recovery = window.CommandBlockChatRecovery;
   let conversationId = null;
   let cloudUser = null; // session ของ supabase (email/ผู้ใช้) — ใช้แสดงชิปบัญชี
   document.documentElement.classList.add('cb-auth-pending');
@@ -81,12 +82,14 @@
     return data.session;
   }
   async function ensureConversation(session, message) {
+    if (!conversationId && recovery) conversationId = recovery.loadConversationId(localStorage, session.user.id);
     if (conversationId) return conversationId;
     const title = (message || 'แชทใหม่').trim().slice(0, 80) || 'แชทใหม่';
     const { data, error } = await client.from('conversations')
       .insert({ user_id: session.user.id, title, model_id: MODEL }).select('id').single();
     if (error) throw new Error('สร้างประวัติสนทนาไม่สำเร็จ');
     conversationId = data.id;
+    if (recovery) recovery.saveConversationId(localStorage, session.user.id, conversationId);
     return conversationId;
   }
   async function saveMessage(session, role, content) {
@@ -146,34 +149,41 @@
     let content = '';
     let toolCalls = [];
     let usage = {};
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, idx).trim();
-        buffer = buffer.slice(idx + 1);
-        if (!line.startsWith('data:')) continue;
-        const data = line.slice(5).trim();
-        if (data === '[DONE]') continue;
-        let chunk;
-        try { chunk = JSON.parse(data); } catch { continue; }
-        const choice = chunk.choices?.[0];
-        const delta = choice?.delta || {};
-        if (delta.reasoning_content) onDelta('think', { t: delta.reasoning_content });
-        if (delta.content) { content += delta.content; onDelta('content', { t: delta.content }); }
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const index = tc.index || 0;
-            toolCalls[index] = toolCalls[index] || { id: '', type: 'function', function: { name: '', arguments: '' } };
-            if (tc.id) toolCalls[index].id += tc.id;
-            if (tc.function?.name) toolCalls[index].function.name += tc.function.name;
-            if (tc.function?.arguments) toolCalls[index].function.arguments += tc.function.arguments;
+    let completed = false;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, idx).trim();
+          buffer = buffer.slice(idx + 1);
+          if (!line.startsWith('data:')) continue;
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') { completed = true; continue; }
+          let chunk;
+          try { chunk = JSON.parse(data); } catch { continue; }
+          const choice = chunk.choices?.[0];
+          const delta = choice?.delta || {};
+          if (delta.reasoning_content) onDelta('think', { t: delta.reasoning_content });
+          if (delta.content) { content += delta.content; onDelta('content', { t: delta.content }); }
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const index = tc.index || 0;
+              toolCalls[index] = toolCalls[index] || { id: '', type: 'function', function: { name: '', arguments: '' } };
+              if (tc.id) toolCalls[index].id += tc.id;
+              if (tc.function?.name) toolCalls[index].function.name += tc.function.name;
+              if (tc.function?.arguments) toolCalls[index].function.arguments += tc.function.arguments;
+            }
           }
+          if (chunk.usage) usage = chunk.usage;
         }
-        if (chunk.usage) usage = chunk.usage;
       }
+      if (!completed) throw new Error('การเชื่อมต่อกับ AI ขาดก่อนตอบเสร็จ');
+    } catch (error) {
+      error.partialContent = content;
+      throw error;
     }
     return { content, tool_calls: toolCalls.filter((c) => c.id || c.function?.name), usage };
   }
@@ -193,26 +203,61 @@
         const push = (name, payload) => {
           try { controller.enqueue(encoder.encode(event(name, payload))); } catch { /* stream ปิดแล้ว */ }
         };
+        // มือถือหรือเครือข่ายบางแบบตัด SSE ที่เงียบนานระหว่างรอ Desktop Connector
+        // จึงส่ง heartbeat เบา ๆ เพื่อคงการเชื่อมต่อ โดยฝั่ง UI จะไม่แสดง event นี้
+        const heartbeat = setInterval(() => push('ping', { t: 'keepalive' }), 5000);
         try {
           const session = await currentSession();
           const { message } = requestBody(init);
           if (!message?.trim()) { push('note', { t: 'กรุณาพิมพ์ข้อความก่อนส่ง' }); controller.close(); return; }
           const apiKey = sessionKey() || (await askForKey());
           if (!apiKey) { push('note', { t: 'ต้องใส่ DeepSeek API key ก่อนใช้งาน Cloud chat' }); controller.close(); return; }
-          const id = await saveMessage(session, 'user', message);
-          const messages = await conversationMessages(session, id);
-          messages.unshift({ role: 'system', content: await agentSystemWithSkills() });
+          const savedRun = recovery?.isContinuationRequest(message)
+            ? recovery.loadRunState(sessionStorage, session.user.id)
+            : null;
+          let id;
+          let messages;
+          if (savedRun) {
+            conversationId = savedRun.conversationId;
+            recovery.saveConversationId(localStorage, session.user.id, conversationId);
+            id = await saveMessage(session, 'user', message);
+            messages = [{ role: 'system', content: await agentSystemWithSkills() }, ...savedRun.messages,
+              { role: 'user', content: 'ดำเนินการต่อจาก checkpoint ล่าสุด ห้ามทำซ้ำสิ่งที่เสร็จแล้ว และตรวจผลจากเครื่องมือเดิมก่อน' }];
+          } else {
+            id = await saveMessage(session, 'user', message);
+            messages = await conversationMessages(session, id);
+            messages.unshift({ role: 'system', content: await agentSystemWithSkills() });
+          }
+          const persistRun = () => {
+            if (!recovery) return;
+            const resumable = messages.filter((item) => item.role !== 'system').slice(-32);
+            recovery.saveRunState(sessionStorage, session.user.id, { conversationId: id, messages: resumable });
+          };
           let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
           let lastContent = '';
           let steps = 0;
+          let needsResume = false;
           // eslint-disable-next-line no-constant-condition
           while (true) {
             steps += 1;
-            if (steps > 12) { push('note', { t: '⚠️ งานยังไม่เสร็จใน 12 ขั้นตอน — พยายามต่อไปหรือแบ่งงานเป็นชิ้นเล็กๆ' }); break; }
-            const data = await agentCall(apiKey, messages, (name, payload) => {
-              if (name === 'content') lastContent += payload.t || '';
-              push(name, payload);
-            });
+            if (steps > 12) {
+              needsResume = true;
+              push('note', { t: '⚠️ งานยังไม่เสร็จใน 12 ขั้นตอน — checkpoint ถูกเก็บไว้แล้ว' });
+              break;
+            }
+            persistRun();
+            let data;
+            try {
+              data = await agentCall(apiKey, messages, (name, payload) => {
+                if (name === 'content') lastContent += payload.t || '';
+                push(name, payload);
+              });
+            } catch (error) {
+              const partial = String(error?.partialContent || '').trim();
+              if (partial) messages.push({ role: 'assistant', content: partial });
+              persistRun();
+              throw error;
+            }
             const usage = data.usage || {};
             totalUsage.prompt_tokens += Number(usage.prompt_tokens || 0);
             totalUsage.completion_tokens += Number(usage.completion_tokens || 0);
@@ -220,6 +265,7 @@
             const calls = data.tool_calls || [];
             if (!calls.length) break;
             messages.push({ role: 'assistant', content: data.content || '', tool_calls: calls });
+            persistRun();
             for (const call of calls) {
               const name = call.function?.name || '';
               let args = '{}';
@@ -232,13 +278,24 @@
                 result = { error: error.message || 'เรียกเครื่องมือไม่สำเร็จ' };
               }
               messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
+              persistRun();
             }
           }
           if (lastContent) await saveMessage(session, 'assistant', lastContent);
+          if (needsResume && recovery?.loadRunState(sessionStorage, session.user.id)) {
+            push('resume', { t: 'งานยังไม่จบ แต่ checkpoint ถูกบันทึกแล้ว — กดทำต่อจากจุดที่บันทึกเพื่อไม่เริ่มงานซ้ำ' });
+          } else {
+            recovery?.clearRunState(sessionStorage, session.user.id);
+          }
           push('usage', totalUsage);
         } catch (error) {
-          push('note', { t: error.message || 'ไม่สามารถเชื่อมต่อ Cloud chat ได้' });
+          const detail = error.message || 'ไม่สามารถเชื่อมต่อ Cloud chat ได้';
+          push('note', { t: detail });
+          if (recovery?.loadRunState(sessionStorage, session.user.id)) {
+            push('resume', { t: 'การทำงานถูกบันทึกไว้แล้ว — กดทำต่อจากจุดที่บันทึก เพื่อใช้ผลเดิมและไม่เริ่มงานใหม่' });
+          }
         } finally {
+          clearInterval(heartbeat);
           try { controller.close(); } catch { /* ignore */ }
         }
       },

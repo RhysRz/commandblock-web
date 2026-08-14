@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sourcePath = resolve(root, 'src/ui.html');
 const adapterPath = resolve(root, 'web/cloud-adapter.js');
+const recoveryPath = resolve(root, 'web/chat-recovery.js');
 const sitePath = resolve(root, 'site');
 
 if (!existsSync(adapterPath)) throw new Error('Missing web/cloud-adapter.js');
+if (!existsSync(recoveryPath)) throw new Error('Missing web/chat-recovery.js');
 
 rmSync(sitePath, { recursive: true, force: true });
 mkdirSync(sitePath, { recursive: true });
@@ -18,6 +20,7 @@ if (firstScript < 0) throw new Error('src/ui.html must contain an inline script'
 
 const injected = [
   '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>',
+  '<script src="./chat-recovery.js"></script>',
   '<script src="./cloud-adapter.js"></script>',
   '<script>',
 ].join('\n');
@@ -27,5 +30,6 @@ const hosted = original
 
 writeFileSync(resolve(sitePath, 'index.html'), hosted);
 copyFileSync(adapterPath, resolve(sitePath, 'cloud-adapter.js'));
+copyFileSync(recoveryPath, resolve(sitePath, 'chat-recovery.js'));
 copyFileSync(resolve(root, 'web/manifest.webmanifest'), resolve(sitePath, 'manifest.webmanifest'));
 if (existsSync(resolve(root, 'assets'))) cpSync(resolve(root, 'assets'), resolve(sitePath, 'assets'), { recursive: true });
