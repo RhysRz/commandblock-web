@@ -17,8 +17,8 @@ Provide reusable IDE workflows for both the desktop app and the web app through 
 9. `backend-api` — design and implement APIs, validation, error handling, and auth boundaries.
 10. `database` — create safe migrations, query data, and protect data access rules.
 11. `devops-release` — build, package, release, diagnose CI, and only offer verified updates.
-12. `security-review` — review secrets, auth, permissions, input handling, and dependency risk.
-13. `performance` — measure bottlenecks, improve client/server performance, and verify results.
+12. `ide-security-review` — review secrets, auth, permissions, input handling, and dependency risk without replacing the existing global `security-review` skill.
+13. `ide-performance` — measure bottlenecks, improve client/server performance, and verify results without replacing the existing global `performance` skill.
 14. `documentation` — create and maintain README, setup guides, API docs, and changelogs.
 15. `remote-workspace` — operate files, terminal commands, and previews through Desktop Connector with confirmation for destructive actions.
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web UI"
+  short_description: "Build responsive accessible web interfaces."
+  default_prompt: "Use $web-ui to help with this project task."

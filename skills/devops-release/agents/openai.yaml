@@ -1,0 +1,4 @@
+interface:
+  display_name: "DevOps Release"
+  short_description: "Build, package, and release verified software."
+  default_prompt: "Use $devops-release to help with this project task."

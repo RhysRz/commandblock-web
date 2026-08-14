@@ -1,0 +1,4 @@
+interface:
+  display_name: "IDE Security Review"
+  short_description: "Review CommandBlock code for secrets, auth, and security risks."
+  default_prompt: "Use $ide-security-review to help with this project task."

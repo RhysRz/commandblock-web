@@ -4,7 +4,7 @@
 
 **Goal:** Add a complete, discoverable AI IDE skill suite while retaining all existing EXE-discovered skills.
 
-**Architecture:** Store CommandBlock-owned skills under `C:\Codex\skills\<skill-name>\SKILL.md`. The existing scanner already merges that directory with `~\.agents\skills`, removes duplicate names, and exposes the result in desktop Project Settings and web Project Settings through Desktop Connector.
+**Architecture:** Store CommandBlock-owned skills under `C:\Codex\skills\<skill-name>\SKILL.md`. The existing scanner already searches that directory before `~\.agents\skills` and exposes both sources in desktop Project Settings and web Project Settings through Desktop Connector. CommandBlock-owned names must not collide with existing EXE skills.
 
 **Tech Stack:** Markdown SKILL.md files, CommandBlock Rust skill scanner, existing Project Settings UI.
 
@@ -36,7 +36,7 @@ Expected: Project `skills` appears before user-level `.agents/skills`.
 
 - [ ] **Step 2: Record the non-duplication rule**
 
-Confirm the scanner stores skill names in a case-insensitive set before returning cards to Project Settings.
+Confirm the new CommandBlock-owned names do not collide with any existing EXE-discovered skill before returning cards to Project Settings.
 
 ### Task 2: Create core engineering workflows
 
@@ -76,8 +76,8 @@ Expected: Every created skill returns `True`.
 - Create: `skills/backend-api/SKILL.md`
 - Create: `skills/database/SKILL.md`
 - Create: `skills/devops-release/SKILL.md`
-- Create: `skills/security-review/SKILL.md`
-- Create: `skills/performance/SKILL.md`
+- Create: `skills/ide-security-review/SKILL.md`
+- Create: `skills/ide-performance/SKILL.md`
 - Create: `skills/documentation/SKILL.md`
 - Create: `skills/remote-workspace/SKILL.md`
 

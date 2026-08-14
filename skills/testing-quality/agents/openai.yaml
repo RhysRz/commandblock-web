@@ -1,0 +1,4 @@
+interface:
+  display_name: "Testing Quality"
+  short_description: "Write and run focused regression and quality tests."
+  default_prompt: "Use $testing-quality to help with this project task."

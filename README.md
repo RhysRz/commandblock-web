@@ -240,6 +240,12 @@ Commandblock โหลดทักษะ (SKILL.md) มาปฏิบัติ�
 ค้นหาได้จาก 3 ที่ (เรียงตามลำดับ): `BUFF_SKILLS_DIR` → `./skills` ในโปรเจกต์ →
 `~/.buff/skills` → `~/.agents/skills` (โฟลเดอร์เดียวกับที่ Buffy ใช้)
 
+ในรีโปนี้มีชุด **AI IDE skills** เพิ่มให้อีก 15 ชุดใน `C:\Codex\skills` เช่น วางแผน,
+ค้นหาโค้ด, เขียนโค้ด, ดีบัก, ทดสอบ, refactor, Git, Web/UI, API, ฐานข้อมูล,
+release, ความปลอดภัย, performance, เอกสาร และ Remote Workspace. ชุดนี้แสดงร่วมกับ
+สกิลเดิมที่ตัว EXE พบจาก `~/.agents/skills` โดยไม่แก้ไขหรือลบสกิลเดิม
+(`ide-security-review` และ `ide-performance` ใช้ชื่อแยก เพื่อไม่ทับสกิลเดิมชื่อเดียวกัน).
+
 ```
 คุณ> /skills                                # ดูรายการทักษะที่มี
 คุณ> ตรวจสอบความเข้าถึงของหน้าเว็บนี้หน่อย  # Commandblock จะโหลดทักษะ accessibility ให้เอง

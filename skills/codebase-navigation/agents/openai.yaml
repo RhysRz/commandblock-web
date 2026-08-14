@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codebase Navigation"
+  short_description: "Explore code, architecture, and dependencies quickly."
+  default_prompt: "Use $codebase-navigation to help with this project task."

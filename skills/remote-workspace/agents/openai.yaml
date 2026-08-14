@@ -1,0 +1,4 @@
+interface:
+  display_name: "Remote Workspace"
+  short_description: "Operate a connected desktop workspace safely."
+  default_prompt: "Use $remote-workspace to help with this project task."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Documentation"
+  short_description: "Create clear user and developer documentation."
+  default_prompt: "Use $documentation to help with this project task."

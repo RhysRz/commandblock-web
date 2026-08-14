@@ -1,0 +1,4 @@
+interface:
+  display_name: "Debugging"
+  short_description: "Reproduce, diagnose, and fix software defects."
+  default_prompt: "Use $debugging to help with this project task."

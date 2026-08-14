@@ -1,0 +1,4 @@
+interface:
+  display_name: "Database"
+  short_description: "Create safe database queries and migrations."
+  default_prompt: "Use $database to help with this project task."

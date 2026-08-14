@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Implementation"
+  short_description: "Implement scoped changes and verify the result."
+  default_prompt: "Use $code-implementation to help with this project task."

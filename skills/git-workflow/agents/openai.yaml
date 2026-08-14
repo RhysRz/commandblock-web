@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Workflow"
+  short_description: "Inspect changes and create safe focused commits."
+  default_prompt: "Use $git-workflow to help with this project task."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Refactoring"
+  short_description: "Improve code structure without changing behavior."
+  default_prompt: "Use $refactoring to help with this project task."

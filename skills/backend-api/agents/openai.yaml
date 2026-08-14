@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backend API"
+  short_description: "Design and implement reliable backend APIs."
+  default_prompt: "Use $backend-api to help with this project task."

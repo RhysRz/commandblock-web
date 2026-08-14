@@ -1,0 +1,4 @@
+interface:
+  display_name: "IDE Performance"
+  short_description: "Measure and optimize CommandBlock application performance."
+  default_prompt: "Use $ide-performance to help with this project task."
