@@ -355,6 +355,12 @@ fn execute(action: &str, payload: &Value, root: &Path, auto_approve: bool) -> Re
         "changes" => Ok(json!({"changes": []})),
         "queue" => Ok(json!({"activity": ["Desktop Connector ออนไลน์"]})),
         "preview" => Ok(json!({"preview_url": ""})),
+        "preview_action" => {
+            let action = payload.get("action").and_then(Value::as_str).unwrap_or("open");
+            let detail = crate::tools::execute("preview_open", &json!({}), &mut None);
+            let ok = !detail.contains("ยังไม่มี Preview") && !detail.contains("อนุญาตเฉพาะ");
+            Ok(json!({"ok": ok, "action": action, "detail": detail}))
+        }
         "exec" => {
             let command = payload
                 .get("command")

@@ -40,6 +40,12 @@ pub trait TurnSink {
     fn end_line(&mut self);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnOutcome {
+    Completed,
+    Interrupted,
+}
+
 /// sink สำหรับ CLI (พิมพ์จอเหมือนเดิม)
 struct CliSink {
     header: bool,
@@ -403,13 +409,13 @@ pub fn run_turn(
     history: &mut Vec<Value>,
     plan: &mut Option<String>,
     sink: &mut dyn TurnSink,
-) {
+) -> TurnOutcome {
     if matches!(eff.backend, config::Backend::Offline) {
         sink.note(
             "CommandBlock: ขอโทษครับ ตอนนี้ยังไม่มี AI ต่อ (โหมด offline)\n   วิธีเปิดใช้งาน:\n     1. ใส่ API key: แก้ไฟล์ config.json (api_key) หรือตั้งตัวแปร BUFF_API_KEY\n     2. หรือเปิด Ollama (https://ollama.com) ที่เครื่อง แล้วรัน: ollama pull qwen2.5-coder:7b\n   แล้วรัน CommandBlock ใหม่ (ดูรายละเอียดใน README.md)",
         );
         sink.end_line();
-        return;
+        return TurnOutcome::Completed;
     }
 
     let mut rounds = 0;
@@ -424,7 +430,7 @@ pub fn run_turn(
         if rounds > MAX_ROUNDS {
             sink.note(&format!("(ถึงขีดจำกัด {MAX_ROUNDS} รอบ — ขอสรุปผลล่าสุด)"));
             final_summary(agent, eff, history, last_tool_result.as_deref(), sink);
-            break;
+            return TurnOutcome::Interrupted;
         }
 
         let use_tools = !matches!(eff.backend, config::Backend::Offline);
@@ -444,7 +450,7 @@ pub fn run_turn(
                         Err(e2) => {
                             sink.note(&e2);
                             sink.end_line();
-                            return;
+                            return TurnOutcome::Completed;
                         }
                     }
                 } else if llm::should_try_fallback(&e) {
@@ -474,13 +480,13 @@ pub fn run_turn(
                         None => {
                             sink.note(&e);
                             sink.end_line();
-                            return;
+                            return TurnOutcome::Completed;
                         }
                     }
                 } else {
                     sink.note(&e);
                     sink.end_line();
-                    return;
+                    return TurnOutcome::Completed;
                 }
             }
         };
@@ -548,7 +554,7 @@ pub fn run_turn(
                     &structured_calls
                 };
                 finish_loop_guard(history, calls_to_reply, sink);
-                return;
+                return TurnOutcome::Completed;
             }
 
             sink.tools_begin();
@@ -583,6 +589,7 @@ pub fn run_turn(
             trim_history(history);
         }
     }
+    TurnOutcome::Completed
 }
 
 fn stream_response(
@@ -789,7 +796,7 @@ pub fn system_prompt() -> String {
 6. ระวังคำสั่งอันตราย (ลบไฟล์, git push/reset, แตะฐานข้อมูลหรือ production) — ถ้าไม่แน่ใจ ให้ถามผู้ใช้ก่อน
 7. เครื่องมือเว็บ: ใช้ web_search เพื่อค้นหาข้อมูลปัจจุบัน/ข่าว/เอกสารล่าสุด (เช่น ถามเรื่องเวอร์ชันล่าสุด, วิธีติดตั้ง, ข่าว, เรื่องนอกโปรเจกต์) แล้วใช้ read_url เพื่ออ่านรายละเอียดจากลิงก์ที่เจอ — อย่าตอบจากความรู้เก่าถ้ามีข้อมูลออนไลน์ใหม่กว่า
 8. ความจำ: ผู้ใช้เรียกใช้คุณหลายครั้ง — ประวัติบทสนทนาก่อนหน้า (ระหว่างเซสชัน) ถูกส่งให้ในข้อความแล้ว ใช้ต่อจากบริบทนั้นได้ เช่น ผู้ใช้ถามต่อจากงานเมื่อวาน อย่าทำเป็นลืมงานที่เคยทำไป
-9. พรีวิวเว็บ: เมื่อผู้ใช้ขอ 'ดูพรีวิว/แสดงหน้าเว็บ' หรือเมื่อคุณสร้างเว็บแอป/หน้า HTML ให้ใช้ open_preview เพื่อเปิดให้ผู้ใช้เห็นภาพจริงในเบราว์เซอร์ทันที
+9. พรีวิวเว็บ: เมื่อผู้ใช้ขอ 'ดูพรีวิว/แสดงหน้าเว็บ' หรือเมื่อคุณสร้างเว็บแอป/หน้า HTML ให้ใช้ open_preview เพื่อเปิดให้ผู้ใช้เห็นภาพจริงทันที; ใช้ preview_open/preview_inspect เพื่อเปิดและตรวจ Preview local และ preview_click/preview_fill เพื่อบอกผู้ใช้ทดสอบใน Preview โดยห้ามอ้างว่าคลิกหรือกรอกแทนผู้ใช้สำเร็จ
 10. ทักษะ (skills): มีทักษะเฉพาะทางให้โหลด (เหมือนผู้ช่วย AI ระดับมืออาชีพ) — ก่อนทำงานเฉพาะทางให้ใช้ list_skills ดูรายการ แล้ว load_skill อ่านคำแนะนำ เช่น ตรวจสอบความเข้าถึง (accessibility), ออกแบบ API (api-design-principles)
 11. เมื่อต้องใช้เครื่องมือ: ถ้าระบบไม่ให้รูปแบบ tool_calls มา ให้ตอบเป็น JSON เดี่ยวเท่านั้นในรูปแบบ {"name": "ชื่อเครื่องมือ", "arguments": {"พารามิเตอร์": ค่า}} เช่น {"name": "list_directory", "arguments": {"path": "."}} — ต้องมี name และ arguments ครบถ้วน ห้ามมีข้อความอื่นนอกจาก JSON และอย่าใช้ key "parameters"
 12. หลังเสร็จงาน สรุปสั้นๆ: ทำอะไรไป, ผลลัพธ์, ไฟล์ที่เกี่ยวข้อง และวิธีทดสอบ

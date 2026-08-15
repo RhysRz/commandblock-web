@@ -1316,6 +1316,7 @@ const wrap = chat.querySelector(".wrap");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 let state = { preview_url: "" };
+function resumeFromCheckpoint(){ input.value="ทำต่อจากจุดที่บันทึกไว้"; autoGrow(); send(); }
 
 /* ---------- เครดิต DeepSeek และ token (เก็บเฉพาะเบราว์เซอร์นี้) ---------- */
 const usageKey = "commandblock-usage-v1";
@@ -1714,6 +1715,10 @@ const TOOL_META = {
   web_search:     ["🌐", "Search web"],
   read_url:       ["🔗", "Read URL"],
   open_preview:   ["🖼️", "Preview"],
+  preview_open:   ["🖼️", "Preview: เปิด"],
+  preview_inspect:["🖼️", "Preview: ตรวจ"],
+  preview_click:  ["🖼️", "Preview: คลิก"],
+  preview_fill:   ["🖼️", "Preview: กรอก"],
   list_skills:    ["📚", "Skills"],
   load_skill:     ["📖", "Skill"],
 };
@@ -1969,6 +1974,7 @@ async function send(){
             else if(ev==="tool"&&obj){
               const work=ensureWorkSegment();
               turnActivity = toolLabel(obj.name,obj.args);
+              if(String(obj.name||"").startsWith("preview_")) switchTab("preview");
               if(obj.name==="update_plan"){ try{ const a=JSON.parse(obj.args); setTodos(a.plan||"", work.bubble); }catch(e){ renderWorkStrip(work.bubble); } }
               else { checkNextTodo(); renderWorkStrip(work.bubble); }
               scrollBottom();
@@ -1980,8 +1986,8 @@ async function send(){
             else if(ev === "resume" && obj && obj.t){
               const card=document.createElement("div"); card.className="note";
               const button=document.createElement("button"); button.type="button"; button.className="pill";
-              button.textContent="▶ ทำต่อจากจุดที่บันทึก";
-              button.onclick=()=>{ input.value="ทำต่อจากจุดที่บันทึกไว้"; autoGrow(); send(); };
+              button.textContent="▶ ทำต่อจาก Checkpoint";
+              button.onclick=resumeFromCheckpoint;
               card.append(document.createTextNode(obj.t+" "),button);
               (workSegment||ensureTextSegment()).cursor.insertAdjacentElement("beforebegin",card); scrollBottom();
             }

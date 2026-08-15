@@ -1461,18 +1461,25 @@ fn handle_chat(
     let mut g = shared.lock().unwrap();
     let cur_eff = g.current_eff();
     let configured_models = g.cfg_models.clone();
-    {
+    let (outcome, resume_plan, resume_project) = {
         let Shared { history, plan, .. } = &mut *g;
         history.push(json!({"role": "user", "content": user_content}));
         let mut sink = SseSink { out };
-        crate::run_turn(agent, &cur_eff, &configured_models, history, plan, &mut sink);
-    }
+        let outcome = crate::run_turn(agent, &cur_eff, &configured_models, history, plan, &mut sink);
+        (outcome, plan.clone().unwrap_or_default(), g.folder_path.clone())
+    };
     crate::save_session_at(&session_path_for(&g.account), &g.history);
     let sync_history = g.history.clone();
     let sync_model = g.model.clone();
     let sync_conversation = g.conversation_id.clone();
     let logged_in = g.account.is_some();
     drop(g);
+    if outcome == crate::TurnOutcome::Interrupted {
+        let _ = sse(out, "resume", json!({
+            "t": "งานยังไม่เสร็จ — checkpoint ถูกบันทึกแล้ว กดทำต่อเพื่อใช้บริบทเดิม",
+            "reason": "step_limit", "project_key": resume_project, "plan": resume_plan
+        }));
+    }
     let _ = sse(out, "done", json!({"ok": true}));
     let _ = out.flush();
     // ซิงก์ประวัติแชทขึ้นคลาวด์ (ต่อบัญชี — ใช้ข้ามเครื่องได้)

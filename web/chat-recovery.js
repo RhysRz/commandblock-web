@@ -39,16 +39,22 @@
 
   function saveRunState(storage, userId, state) {
     if (!state?.conversationId || !Array.isArray(state.messages)) return false;
-    return saveJson(storage, scopedKey('run', userId), {
+    const saved = {
       conversationId: String(state.conversationId),
       messages: state.messages,
-    });
+    };
+    if (state.projectKey) saved.projectKey = String(state.projectKey);
+    if (state.plan) saved.plan = String(state.plan);
+    if (state.savedAt) saved.savedAt = Number(state.savedAt);
+    if (state.reason) saved.reason = String(state.reason);
+    return saveJson(storage, scopedKey('run', userId), saved);
   }
 
-  function loadRunState(storage, userId) {
+  function loadRunState(storage, userId, projectKey) {
     const saved = loadJson(storage, scopedKey('run', userId));
     if (!saved || typeof saved.conversationId !== 'string' || !Array.isArray(saved.messages)) return null;
-    return { conversationId: saved.conversationId, messages: saved.messages };
+    if (projectKey && saved.projectKey !== String(projectKey)) return null;
+    return saved;
   }
 
   function clearRunState(storage, userId) {

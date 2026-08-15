@@ -176,11 +176,17 @@
         parameters: { type: 'object', properties: { plan: { type: 'string', description: 'แผนงานหลายขั้นตอนแบบลำดับเลข' } }, required: ['plan'] },
       },
     },
+    {
+      type: 'function', function: {
+        name: 'preview_open', description: 'เปิด Preview ของโปรเจกต์บนเครื่อง Desktop Connector เพื่อให้ผู้ใช้และ AI ตรวจผลหน้าเว็บ',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    },
   ];
   const agentSystem = 'คุณคือ CommandBlock ผู้ช่วยพัฒนาโค้ด AI ทำงานบนคอมพิวเตอร์ของผู้ใช้ผ่าน Desktop Connector ' +
     'คุณสามารถรันคำสั่ง อ่านไฟล์ และดูรายการไฟล์เพื่อทำงานให้สำเร็จ — วางแผนเป็นขั้นตอน ใช้เครื่องมือทีละอย่าง ' +
     'อัปเดต Todo เมื่อเริ่มงานและเมื่อขั้นตอนเสร็จ โดยเรียก update_plan เป็นรายการลำดับเลขที่กระชับ ' +
-    'และสรุปผลงานเป็นภาษาไทยสั้นๆ กระชับ ถ้าเครื่องมือล้มเหลวให้ลองวิธีอื่นหรือแจ้งผู้ใช้';
+    'เมื่อจำเป็นต้องตรวจหรือให้ผู้ใช้คลิกหน้าเว็บ ให้เรียก preview_open ก่อน และสรุปผลงานเป็นภาษาไทยสั้นๆ กระชับ ถ้าเครื่องมือล้มเหลวให้ลองวิธีอื่นหรือแจ้งผู้ใช้';
   async function agentCall(apiKey, messages, onDelta) {
     // stream: true — อ่าน SSE ทีละ chunk แล้วเรียก onDelta(ev, payload) แบบเรียลไทม์
     const response = await originalFetch('https://api.deepseek.com/chat/completions', {
@@ -244,6 +250,7 @@
     if (name === 'read_file') return requestConnector('read', { path: args.path || '' });
     if (name === 'list_files') return requestConnector('files', { path: args.path || '' });
     if (name === 'update_plan') return { ok: true, plan: args.plan || '' };
+    if (name === 'preview_open') return requestConnector('preview_action', { action: 'open' });
     return { error: 'ไม่รู้จักเครื่องมือ ' + name };
   }
   async function cloudChat(init) {
@@ -263,8 +270,9 @@
           if (!message?.trim()) { push('note', { t: 'กรุณาพิมพ์ข้อความก่อนส่ง' }); controller.close(); return; }
           const apiKey = sessionKey() || (await askForKey());
           if (!apiKey) { push('note', { t: 'ต้องใส่ DeepSeek API key ก่อนใช้งาน Cloud chat' }); controller.close(); return; }
+          const projectKey = 'connector:' + (sessionStorage.getItem(ACTIVE_DEVICE_NAME) || 'unlinked');
           const savedRun = recovery?.isContinuationRequest(message)
-            ? recovery.loadRunState(sessionStorage, session.user.id)
+            ? recovery.loadRunState(sessionStorage, session.user.id, projectKey)
             : null;
           let id;
           let messages;
@@ -282,7 +290,10 @@
           const persistRun = () => {
             if (!recovery) return;
             const resumable = messages.filter((item) => item.role !== 'system').slice(-32);
-            recovery.saveRunState(sessionStorage, session.user.id, { conversationId: id, messages: resumable });
+            recovery.saveRunState(sessionStorage, session.user.id, {
+              conversationId: id, messages: resumable, projectKey,
+              plan: '', savedAt: Date.now(), reason: needsResume ? 'step_limit' : 'recoverable_error',
+            });
           };
           let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
           let steps = 0;
@@ -292,6 +303,7 @@
             steps += 1;
             if (steps > 12) {
               needsResume = true;
+              persistRun();
               push('note', { t: '⚠️ งานยังไม่เสร็จใน 12 ขั้นตอน — checkpoint ถูกเก็บไว้แล้ว' });
               break;
             }
@@ -332,8 +344,8 @@
               persistRun();
             }
           }
-          if (needsResume && recovery?.loadRunState(sessionStorage, session.user.id)) {
-            push('resume', { t: 'งานยังไม่จบ แต่ checkpoint ถูกบันทึกแล้ว — กดทำต่อจากจุดที่บันทึกเพื่อไม่เริ่มงานซ้ำ' });
+          if (needsResume && recovery?.loadRunState(sessionStorage, session.user.id, projectKey)) {
+            push('resume', { t: 'งานยังไม่จบ แต่ checkpoint ถูกบันทึกแล้ว — กดทำต่อเพื่อไม่เริ่มงานซ้ำ', reason: 'step_limit', project_key: projectKey });
           } else {
             recovery?.clearRunState(sessionStorage, session.user.id);
           }
@@ -341,8 +353,9 @@
         } catch (error) {
           const detail = error.message || 'ไม่สามารถเชื่อมต่อ Cloud chat ได้';
           push('note', { t: detail });
-          if (recovery?.loadRunState(sessionStorage, session.user.id)) {
-            push('resume', { t: 'การทำงานถูกบันทึกไว้แล้ว — กดทำต่อจากจุดที่บันทึก เพื่อใช้ผลเดิมและไม่เริ่มงานใหม่' });
+          const projectKey = 'connector:' + (sessionStorage.getItem(ACTIVE_DEVICE_NAME) || 'unlinked');
+          if (recovery?.loadRunState(sessionStorage, session.user.id, projectKey)) {
+            push('resume', { t: 'การทำงานถูกบันทึกไว้แล้ว — กดทำต่อเพื่อใช้ผลเดิมและไม่เริ่มงานใหม่', reason: 'recoverable_error', project_key: projectKey });
           }
         } finally {
           clearInterval(heartbeat);

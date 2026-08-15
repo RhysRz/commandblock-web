@@ -31,6 +31,20 @@ test('resume state restores the same user conversation and keeps completed tool 
   });
 });
 
+test('resume state is scoped to the active project and keeps interruption details', () => {
+  const storage = memoryStorage();
+  recovery.saveRunState(storage, 'user-1', {
+    conversationId: 'conv-123', messages: [], projectKey: 'C:/demo',
+    plan: '- [ ] build', savedAt: 100, reason: 'step_limit',
+  });
+
+  assert.equal(recovery.loadRunState(storage, 'user-1', 'C:/other'), null);
+  assert.deepEqual(recovery.loadRunState(storage, 'user-1', 'C:/demo'), {
+    conversationId: 'conv-123', messages: [], projectKey: 'C:/demo',
+    plan: '- [ ] build', savedAt: 100, reason: 'step_limit',
+  });
+});
+
 test('resume state is isolated per account and can be cleared after a completed run', () => {
   const storage = memoryStorage();
   recovery.saveRunState(storage, 'user-a', { conversationId: 'conv-a', messages: [{ role: 'user', content: 'แก้บั๊ก' }] });

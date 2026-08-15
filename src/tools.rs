@@ -84,6 +84,10 @@ pub const TOOL_NAMES: &[&str] = &[
     "web_search",
     "read_url",
     "open_preview",
+    "preview_open",
+    "preview_inspect",
+    "preview_click",
+    "preview_fill",
     "list_skills",
     "load_skill",
 ];
@@ -188,6 +192,26 @@ pub fn tool_schemas() -> Vec<Value> {
             },"required":[]}
         }}),
         json!({"type":"function","function":{
+            "name":"preview_open",
+            "description":"เปิด Preview local ล่าสุดของโปรเจกต์เพื่อให้ผู้ใช้ตรวจผลหน้าเว็บ",
+            "parameters":{"type":"object","properties":{},"required":[]}
+        }}),
+        json!({"type":"function","function":{
+            "name":"preview_inspect",
+            "description":"ตรวจว่า Preview local พร้อมเปิดหรือไม่ และคืน URL ที่ปลอดภัยให้ตรวจผล",
+            "parameters":{"type":"object","properties":{},"required":[]}
+        }}),
+        json!({"type":"function","function":{
+            "name":"preview_click",
+            "description":"เปิด Preview local แล้วขอให้ผู้ใช้คลิกองค์ประกอบเพื่อทดสอบ ห้ามอ้างว่าคลิกแทนผู้ใช้สำเร็จ",
+            "parameters":{"type":"object","properties":{"selector":{"type":"string"}},"required":["selector"]}
+        }}),
+        json!({"type":"function","function":{
+            "name":"preview_fill",
+            "description":"เปิด Preview local แล้วบอกช่องที่ผู้ใช้ควรกรอกด้วยข้อมูลทดสอบที่ไม่เป็นความลับ",
+            "parameters":{"type":"object","properties":{"selector":{"type":"string"},"value":{"type":"string"}},"required":["selector","value"]}
+        }}),
+        json!({"type":"function","function":{
             "name":"list_skills",
             "description":"ดูรายการทักษะ (skills) ที่มีอยู่ — ทักษะคือคำแนะนำ/แนวทางเฉพาะทางที่โหลดมาใช้กับงานนั้นๆ (เช่น accessibility, api-design) เหมือนผู้ช่วย AI ระดับมืออาชีพ",
             "parameters":{"type":"object","properties":{},"required":[]}
@@ -231,6 +255,10 @@ pub fn execute(name: &str, args: &Value, plan: &mut Option<String>) -> String {
         "web_search" => web_search(args),
         "read_url" => read_url(args),
         "open_preview" => open_preview(args),
+        "preview_open" => preview_open(),
+        "preview_inspect" => preview_inspect(),
+        "preview_click" => preview_click(args),
+        "preview_fill" => preview_fill(args),
         "list_skills" => list_skills(),
         "load_skill" => load_skill(args),
         other => format!("[เครื่องมือ] ไม่รู้จักเครื่องมือ '{other}'"),
@@ -1101,6 +1129,44 @@ pub fn reopen_preview() -> String {
             format!("เปิดพรีวิวอีกครั้ง: {u}")
         }
         None => "ยังไม่มีพรีวิว — บอกให้ Commandblock สร้างหน้าเว็บแล้วใช้ open_preview ก่อน".to_string(),
+    }
+}
+
+fn local_preview_url() -> Result<String, String> {
+    let url = last_preview_url().ok_or_else(|| "ยังไม่มี Preview — ใช้ open_preview ก่อน".to_string())?;
+    if !url.starts_with("http://127.0.0.1:") {
+        return Err("อนุญาตเฉพาะ Preview local ของ CommandBlock".to_string());
+    }
+    Ok(url)
+}
+
+fn preview_open() -> String {
+    match local_preview_url() {
+        Ok(url) => { open_browser(&url); format!("[Preview: เปิด] {url}") }
+        Err(error) => format!("[Preview: เปิด] {error}"),
+    }
+}
+
+fn preview_inspect() -> String {
+    match local_preview_url() {
+        Ok(url) => format!("[Preview: ตรวจ] Preview local พร้อมตรวจที่ {url}"),
+        Err(error) => format!("[Preview: ตรวจ] {error}"),
+    }
+}
+
+fn preview_click(args: &Value) -> String {
+    let selector = arg_str(args, "selector").unwrap_or("องค์ประกอบที่ระบุ");
+    match local_preview_url() {
+        Ok(url) => { open_browser(&url); format!("[Preview: คลิก] เปิด {url} แล้ว — กรุณาคลิก {selector} ใน Preview เพื่อทดสอบ") }
+        Err(error) => format!("[Preview: คลิก] {error}"),
+    }
+}
+
+fn preview_fill(args: &Value) -> String {
+    let selector = arg_str(args, "selector").unwrap_or("ช่องกรอก");
+    match local_preview_url() {
+        Ok(url) => { open_browser(&url); format!("[Preview: กรอก] เปิด {url} แล้ว — กรุณากรอกค่าทดสอบใน {selector}") }
+        Err(error) => format!("[Preview: กรอก] {error}"),
     }
 }
 
