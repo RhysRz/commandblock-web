@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>CommandBlock — ผู้ช่วยพัฒนาโค้ด AI</title>
 <style>
   :root {
@@ -365,6 +365,7 @@
   .backup-row select { flex: 1; min-width: 180px; background: var(--ink); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; font: 12px Consolas, monospace; }
   /* dropdown เลือกโมเดล */
   .modelwrap { position: relative; display: inline-flex; }
+  #mobileModelSelect { display: none; }
   .modelmenu {
     position: absolute; bottom: 30px; left: 0; z-index: 50;
     background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
@@ -931,6 +932,12 @@
     }
     .statusbar .modelwrap, .statusbar .modelbtn, .statusbar .usagebar { width: 100%; }
     .statusbar .modelbtn { max-width: none; justify-content: space-between; }
+    .statusbar #modelPill, .statusbar #modelMenu { display: none !important; }
+    .statusbar #mobileModelSelect {
+      display: block; width: 100%; min-height: 42px; padding: 8px 10px;
+      color: var(--text); background: rgba(255,255,255,.075); border: 1px solid var(--glass-edge);
+      border-radius: 9px; font: 13px inherit;
+    }
     .statusbar .sp { display: none; }
     .statusbar .usagebar { margin-left: 0; flex-wrap: wrap; }
     .statusbar #statsRight { order: 4; }
@@ -1063,6 +1070,7 @@
       <span class="modelwrap">
         <button class="modelbtn" id="modelPill">กำลังเชื่อมต่อ… <span class="tri">▼</span></button>
         <div class="modelmenu" id="modelMenu" hidden></div>
+        <select id="mobileModelSelect" aria-label="เลือกโมเดล" disabled><option>กำลังโหลดโมเดล…</option></select>
       </span>
       <span class="sp"></span>
       <span class="accchip" id="accChip" title="บัญชีที่ล็อกอิน" hidden>👤 <span id="accEmail"></span></span>
@@ -1336,7 +1344,8 @@ setInterval(tick, 30000);
 fetch("/api/state").then(r => r.json()).then(s => {
   state = s;
   document.getElementById("ver").textContent = "v" + s.version;
-  document.getElementById("modelPill").innerHTML = esc(s.backend + " · " + s.model) + ' <span class="tri">▼</span>';
+  setModelPill(s);
+  fetchModels().catch(()=>{});
   document.getElementById("statsRight").textContent =
     (s.skill_count || 0) + " ทักษะ · " + (s.session_messages || 0) + " ข้อความจำ";
   setFolder(s.folder, s.folder_path);
@@ -1422,12 +1431,40 @@ setInterval(refreshUpdate, 1200);
 /* ---------- เลือกโมเดล (status bar) ---------- */
 const modelMenu = document.getElementById("modelMenu");
 const modelPill = document.getElementById("modelPill");
+const mobileModelSelect = document.getElementById("mobileModelSelect");
 function modelLabel(m){ return m.backend + " · " + m.model; }
 function setModelPill(s){
   state.model = s.model; state.base_url = s.base_url;
   modelPill.innerHTML = esc(s.backend + " · " + s.model) + ' <span class="tri">▼</span>';
+  const selected = [...mobileModelSelect.options].find(o => o.dataset.name === s.model && o.dataset.base === (s.base_url || ""));
+  if(selected) mobileModelSelect.value = selected.value;
 }
 function closeModelMenu(){ modelMenu.hidden = true; }
+function renderMobileModelSelect(list){
+  mobileModelSelect.innerHTML = "";
+  list.forEach((m, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.dataset.name = m.name;
+    option.dataset.base = m.base_url || "";
+    option.textContent = modelLabel(m);
+    option.selected = Boolean(m.active) || (m.name === state.model && (m.base_url || "") === (state.base_url || ""));
+    mobileModelSelect.appendChild(option);
+  });
+  mobileModelSelect.disabled = list.length === 0;
+}
+async function fetchModels(){
+  const res = await fetch("/api/models");
+  const j = await res.json();
+  const list = j.models || [];
+  renderMobileModelSelect(list);
+  return list;
+}
+async function applyModelSelection(name, base){
+  const r = await fetch("/api/model", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: name, base_url: base }) });
+  const jj = await r.json();
+  if (jj.ok) { setModelPill(jj); closeModelMenu(); }
+}
 document.addEventListener("click", e => {
   if (!modelMenu.hidden && !modelMenu.contains(e.target) && e.target !== modelPill) closeModelMenu();
 });
@@ -1435,9 +1472,7 @@ modelPill.addEventListener("click", async e => {
   e.stopPropagation();
   if (!modelMenu.hidden) { closeModelMenu(); return; }
   try {
-    const res = await fetch("/api/models");
-    const j = await res.json();
-    const list = j.models || [];
+    const list = await fetchModels();
     let html = '<div class="mhead">เลือกโมเดล</div>';
     list.forEach(m => {
       const src = m.source === "ollama" ? "(ในเครื่อง)" : (m.source === "config" ? "(ตั้งค่า)" : "");
@@ -1452,14 +1487,15 @@ modelPill.addEventListener("click", async e => {
     modelMenu.querySelectorAll(".mitem").forEach(b => {
       b.addEventListener("click", async () => {
         const name = b.dataset.name, base = b.dataset.base;
-        try {
-          const r = await fetch("/api/model", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: name, base_url: base }) });
-          const jj = await r.json();
-          if (jj.ok) { setModelPill(jj); closeModelMenu(); }
-        } catch(err){}
+        try { await applyModelSelection(name, base); } catch(err){}
       });
     });
   } catch(err){}
+});
+mobileModelSelect.addEventListener("change", async () => {
+  const option = mobileModelSelect.selectedOptions[0];
+  if(!option) return;
+  try { await applyModelSelection(option.dataset.name, option.dataset.base); } catch(err){}
 });
 
 /* ---------- render chat ---------- */
@@ -1919,7 +1955,6 @@ syncMobileStatusPlacement();
 window.addEventListener("resize", syncMobileStatusPlacement);
 mobileMenuToggle.addEventListener("click",()=>setMobileMenuDrawer(!document.body.classList.contains("mobmenu")));
 mobileHistoryToggle.addEventListener("click",()=>setMobileHistoryDrawer(!document.body.classList.contains("mobhist")));
-mobileSettingsToggle.addEventListener("click", openSettings);
 document.getElementById("mobBackdrop").addEventListener("click",()=>{
   setMobileMenuDrawer(false);
   setMobileHistoryDrawer(false);
@@ -2190,6 +2225,7 @@ function openSettings(){
     settingsModal.hidden = false;
   }).catch(()=>{ toast("โหลดการตั้งค่าไม่สำเร็จ", "err"); });
 }
+mobileSettingsToggle.addEventListener("click", openSettings);
 function closeSettings(){ settingsModal.hidden = true; }
 function renderStartupLog(){
   fetch("/api/startup-log").then(r=>r.json()).then(j=>{
