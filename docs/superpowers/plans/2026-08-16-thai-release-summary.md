@@ -13,7 +13,7 @@
 - Use local Git metadata and the existing GitHub release token only; no AI or paid translation service.
 - Preserve update eligibility, ZIP assets, checksums, and release URL.
 - Keep `src/config.rs`, `src/diagnostics.rs`, and `buff_session.json.bak` unstaged.
-- Release version is `1.0.8`.
+- Release version is `1.0.9`.
 
 ---
 

@@ -19,6 +19,7 @@ function Convert-CommitSubjectToThai([string]$CommitSubject) {
   if ($kind -in @('docs', 'test', 'ci', 'build', 'chore')) { return $null }
   $text = $match.Groups['text'].Value.ToLowerInvariant()
   $detail = if ($text -match 'native confirm|confirmation|confirm dialog') { 'หน้าต่างยืนยันการทำรายการ' }
+    elseif ($text -match 'thai release summar|release summar|changelog') { 'สรุปการอัปเดตภาษาไทย' }
     elseif ($text -match 'download|install|updat') { 'การดาวน์โหลดและติดตั้งอัปเดต' }
     elseif ($text -match 'session.*pin|pin.*session|sticky pin') { 'การปักหมุดข้อความและ SESSION' }
     elseif ($text -match 'session') { 'การจัดการ SESSION' }
