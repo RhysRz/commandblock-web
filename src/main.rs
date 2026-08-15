@@ -542,10 +542,12 @@ pub fn run_turn(
         } else {
             // หยุดเฉพาะลูปจริง: งานปกติอาจอ่านหรือแก้หลายไฟล์ด้วยเครื่องมือชนิดเดิม
             if is_tool_loop(&calls, &seen_calls, &mut name_counts) {
-                append_skipped_tool_results(history, &structured_calls);
-                sink.note("[CommandBlock] AI วนลูปเรียกเครื่องมือเดิมบ่อยเกินไป — ขอสรุปผลล่าสุดแทน");
-                final_summary(agent, eff, history, last_tool_result.as_deref(), sink);
-                sink.end_line();
+                let calls_to_reply = if structured_calls.is_empty() {
+                    &calls
+                } else {
+                    &structured_calls
+                };
+                finish_loop_guard(history, calls_to_reply, sink);
                 return;
             }
 
@@ -681,6 +683,22 @@ fn mask_key(key: &str) -> String {
 mod protocol_tests {
     use super::*;
 
+    #[derive(Default)]
+    struct RecordingSink {
+        content: Vec<String>,
+        notes: Vec<String>,
+    }
+
+    impl TurnSink for RecordingSink {
+        fn content(&mut self, delta: &str) { self.content.push(delta.to_string()); }
+        fn think(&mut self, _text: &str) {}
+        fn tools_begin(&mut self) {}
+        fn tool(&mut self, _name: &str, _args: &Value) {}
+        fn note(&mut self, msg: &str) { self.notes.push(msg.to_string()); }
+        fn result(&mut self, _text: &str) {}
+        fn end_line(&mut self) {}
+    }
+
     #[test]
     fn loop_stop_replies_to_every_pending_structured_tool_call() {
         let mut history =
@@ -723,6 +741,40 @@ mod protocol_tests {
         ]);
         assert!(is_tool_loop(&[llm::ToolCall { id:"six".into(), name:"read_file".into(), arguments:json!({"path":"src/c.rs"}), extra:None }], &seen, &mut counts));
     }
+
+    #[test]
+    fn loop_guard_finishes_the_turn_without_generating_a_second_ai_response() {
+        let calls = vec![llm::ToolCall {
+            id: "repeat".into(),
+            name: "read_file".into(),
+            arguments: json!({"path":"src/lib.rs"}),
+            extra: None,
+        }];
+        let mut history = vec![json!({"role":"assistant", "tool_calls":[{"id":"repeat"}]})];
+        let mut sink = RecordingSink::default();
+
+        finish_loop_guard(&mut history, &calls, &mut sink);
+
+        assert_eq!(history[1]["role"], "tool");
+        assert_eq!(history[1]["tool_call_id"], "repeat");
+        assert!(sink.content.is_empty(), "loop guard must not stream another AI answer");
+        assert_eq!(sink.notes.len(), 1);
+        assert!(sink.notes[0].contains("จบเทิร์นนี้"));
+    }
+}
+
+/// จบเทิร์นที่ตรวจพบลูปทันที โดยไม่ส่งคำขอไปยังโมเดลอีกรอบ
+/// เพื่อไม่ให้ข้อความสรุปใหม่ไหลมาต่อท้ายงานเดิมจนผู้ใช้สับสน
+fn finish_loop_guard(
+    history: &mut Vec<Value>,
+    calls: &[llm::ToolCall],
+    sink: &mut dyn TurnSink,
+) {
+    append_skipped_tool_results(history, calls);
+    sink.note(
+        "[CommandBlock] ตรวจพบการเรียกเครื่องมือซ้ำ — จบเทิร์นนี้ทันที (ไม่มีการส่งคำขอ AI รอบใหม่)",
+    );
+    sink.end_line();
 }
 
 pub fn system_prompt() -> String {
