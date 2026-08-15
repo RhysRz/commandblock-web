@@ -404,6 +404,17 @@
   .hist-item .dotc { color: var(--muted); font-size: 11px; margin-top: 3px; flex-shrink: 0; }
   .hist-item .txt { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .hist-sec { padding: 12px 14px 4px; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .hist-head .session-new { margin-left: auto; border: 1px solid var(--border); border-radius: 7px; background: var(--panel2); color: var(--text); padding: 4px 7px; font: inherit; font-size: 11px; cursor: pointer; }
+  .hist-head .session-new:hover, .hist-item.active { border-color: var(--accent); background: rgba(139,108,246,.16); color: var(--text); }
+  .session-item { border: 1px solid transparent; }
+  #pinnedMessages { margin: 0 0 14px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px; background: rgba(139,108,246,.08); }
+  #pinnedMessages[hidden] { display: none; }
+  .pinned-title { font-size: 11px; color: var(--accent2); font-weight: 700; margin-bottom: 5px; }
+  .pinned-message { font-size: 12px; color: var(--muted); padding: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .message-pin { margin-left: 6px; color: var(--accent2); font-size: 11px; }
+  #messageContextMenu { position: fixed; z-index: 10040; min-width: 160px; padding: 5px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); box-shadow: 0 18px 48px rgba(0,0,0,.38); }
+  #messageContextMenu button { width: 100%; border: 0; border-radius: 6px; background: transparent; color: var(--text); padding: 8px 10px; text-align: left; font: 12px inherit; cursor: pointer; }
+  #messageContextMenu button:hover { background: var(--panel2); }
 
   /* ============ RIGHT: tabs ============ */
   #rightpane { display: flex; flex-direction: column; min-width: 0; }
@@ -1044,7 +1055,7 @@
     </button>
   </div>
 
-  <div id="chat"><div class="wrap"></div></div>
+  <div id="chat"><div id="pinnedMessages" hidden></div><div class="wrap"></div></div>
 
   <div class="chat-foot">
     <div class="feedback">💬 <span id="fb" style="cursor:pointer">ให้ข้อเสนอแนะ</span></div>
@@ -1087,9 +1098,10 @@
 
 <!-- ================= MIDDLE: history ================= -->
 <aside id="histpane">
-  <div class="hist-head">ประวัติสนทนา <button class="mob-close" data-close="mobhist" title="ปิดแผง">✕</button></div>
+  <div class="hist-head">SESSION <button id="newSession" class="session-new" type="button">+ New session</button><button class="mob-close" data-close="mobhist" title="ปิดแผง">✕</button></div>
   <div class="hist-list" id="histList"></div>
 </aside>
+<div id="messageContextMenu" role="menu" hidden><button id="togglePinMessage" type="button">📌 Pin message</button></div>
 
 <!-- ================= RIGHT: tabs ================= -->
 <section id="rightpane">
@@ -1169,6 +1181,7 @@
 </section>
 
 <script src="/assets/chat-timeline.js"></script>
+<script src="/assets/session-store.js"></script>
 <script>
 "use strict";
 
@@ -1538,13 +1551,46 @@ function addMsg(role, html, {forceScroll=false, conversationRow=null}={}){
 }
 
 let conversationSyncTimer = null;
+let activeConversationId = null;
+let contextMessage = null;
 const seenConversationRows = new Set();
 const pendingConversationRows = new Map();
 const chatTimeline = window.CommandBlockTimeline;
+const sessionStore = window.CommandBlockSessions;
+const pinnedMessages = document.getElementById("pinnedMessages");
+const messageContextMenu = document.getElementById("messageContextMenu");
+const togglePinMessage = document.getElementById("togglePinMessage");
 function conversationTextKey(role, content){ return role+"\n"+String(content||""); }
 function rowKey(row){ return chatTimeline.messageKey(row); }
 function rowFromMessageElement(el){
   return { id: el.dataset.conversationId || "", created_at: el.dataset.conversationCreatedAt || "", role: el.dataset.conversationRole || "", content: el.dataset.conversationContent || "" };
+}
+function setMessagePinVisual(el, pinned){
+  el.dataset.conversationPinned = pinned ? "true" : "false";
+  let badge = el.querySelector(".message-pin");
+  if(pinned && !badge){ badge=document.createElement("span"); badge.className="message-pin"; badge.textContent="📌 Pinned"; el.querySelector(".bubble")?.prepend(badge); }
+  if(!pinned && badge) badge.remove();
+}
+function closeMessageContextMenu(){ contextMessage=null; messageContextMenu.hidden=true; }
+function renderPinnedMessages(rows){
+  const pins = sessionStore.sortMessages((rows||[]).filter(row=>row.is_pinned));
+  pinnedMessages.hidden = pins.length===0;
+  pinnedMessages.replaceChildren();
+  if(!pins.length) return;
+  const title=document.createElement("div"); title.className="pinned-title"; title.textContent="📌 Pinned messages"; pinnedMessages.appendChild(title);
+  pins.forEach(row=>{ const item=document.createElement("div"); item.className="pinned-message"; item.textContent=(row.role==="user"?"คุณ: ":"AI: ")+row.content; pinnedMessages.appendChild(item); });
+}
+function bindMessageContextMenu(el, row){
+  if(!row?.id || el.dataset.contextBound) return;
+  el.dataset.contextBound="true";
+  el.addEventListener("contextmenu", event=>{
+    event.preventDefault();
+    contextMessage={ id: row.id, is_pinned: Boolean(row.is_pinned), element: el };
+    togglePinMessage.textContent=(row.is_pinned?"📌 Unpin message":"📌 Pin message");
+    messageContextMenu.hidden=false;
+    messageContextMenu.style.left=Math.min(event.clientX, window.innerWidth-messageContextMenu.offsetWidth-8)+"px";
+    messageContextMenu.style.top=Math.min(event.clientY, window.innerHeight-messageContextMenu.offsetHeight-8)+"px";
+  });
 }
 function stampConversationMessage(el, row){
   el.dataset.conversationKey = rowKey(row);
@@ -1556,6 +1602,8 @@ function stampConversationMessage(el, row){
   const index = chatTimeline.insertionIndex(existing.map(rowFromMessageElement), row);
   const before = existing[index] || wrap.querySelector(".msg[data-active-work='true']");
   if(before) wrap.insertBefore(el, before); else wrap.appendChild(el);
+  setMessagePinVisual(el, Boolean(row.is_pinned));
+  bindMessageContextMenu(el, row);
 }
 function rememberConversationMessage(role, content, el){
   const key = conversationTextKey(role, content);
@@ -1571,19 +1619,72 @@ function takePendingConversationMessage(role, content){
   if(!pending.length) pendingConversationRows.delete(key);
   return el;
 }
+function clearConversationTranscript(){
+  wrap.replaceChildren(); seenConversationRows.clear(); pendingConversationRows.clear(); renderPinnedMessages([]); closeMessageContextMenu();
+}
+function renderSessionList(rows){
+  const list=document.getElementById("histList"); list.replaceChildren();
+  const label=document.createElement("div"); label.className="hist-sec"; label.textContent="YOUR SESSIONS"; list.appendChild(label);
+  const ordered=sessionStore ? [...rows].sort(sessionStore.compareSessions) : rows;
+  ordered.forEach(row=>{
+    const item=document.createElement("button"); item.type="button"; item.className="hist-item session-item"+(row.id===activeConversationId?" active":"");
+    item.innerHTML='<span class="dotc">◌</span><span class="txt">'+esc(row.title||"แชทใหม่")+'</span>';
+    item.onclick=()=>selectSession(row.id); list.appendChild(item);
+  });
+  if(!rows.length){ const empty=document.createElement("div"); empty.className="hist-sec"; empty.textContent="ยังไม่มี SESSION"; list.appendChild(empty); }
+}
+async function refreshSessions({load=true}={}){
+  const res=await fetch("/api/conversations"); if(!res.ok) throw new Error("โหลด SESSION ไม่สำเร็จ");
+  const data=await res.json(), rows=data.conversations||[];
+  if(!activeConversationId && data.conversation_id) activeConversationId=data.conversation_id;
+  if(!activeConversationId && rows[0]) activeConversationId=rows[0].id;
+  renderSessionList(rows);
+  if(load && activeConversationId) await syncConversationOnce({reset:true});
+}
+async function selectSession(id){
+  if(!id || id===activeConversationId) return;
+  activeConversationId=id; clearConversationTranscript();
+  try{ await refreshSessions({load:false}); await syncConversationOnce({reset:true}); }
+  catch(error){ toast(error.message||"เปลี่ยน SESSION ไม่สำเร็จ", "err"); }
+}
+async function createNewSession(){
+  try{
+    const res=await fetch("/api/conversations",{method:"POST"}); const data=await res.json();
+    if(!res.ok || !data.conversation?.id) throw new Error(data.error||"สร้าง SESSION ไม่สำเร็จ");
+    activeConversationId=data.conversation.id; clearConversationTranscript(); await refreshSessions({load:false});
+    toast("สร้าง SESSION ใหม่แล้ว", "ok"); input.focus();
+  }catch(error){ toast(error.message||"สร้าง SESSION ไม่สำเร็จ", "err"); }
+}
+document.getElementById("newSession").addEventListener("click", createNewSession);
+document.addEventListener("pointerdown", event=>{ if(!messageContextMenu.contains(event.target)) closeMessageContextMenu(); });
+document.addEventListener("keydown", event=>{ if(event.key==="Escape") closeMessageContextMenu(); });
+togglePinMessage.addEventListener("click", async()=>{
+  const current=contextMessage; if(!current) return;
+  const next=!current.is_pinned; closeMessageContextMenu();
+  try{
+    const res=await fetch("/api/messages/"+encodeURIComponent(current.id)+"/pin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({is_pinned:next})});
+    const data=await res.json(); if(!res.ok) throw new Error(data.error||"บันทึกการปักหมุดไม่สำเร็จ");
+    setMessagePinVisual(current.element,next); await syncConversationOnce({reset:false});
+  }catch(error){ toast(error.message||"บันทึกการปักหมุดไม่สำเร็จ", "err"); }
+});
 function stopConversationSync(){
   if(conversationSyncTimer){ clearInterval(conversationSyncTimer); conversationSyncTimer=null; }
-  seenConversationRows.clear(); pendingConversationRows.clear();
+  clearConversationTranscript();
 }
-async function syncConversationOnce(){
-  if(document.hidden) return;
+async function syncConversationOnce({reset=false}={}){
+  if(document.hidden || !activeConversationId) return;
   try{
-    const res = await fetch("/api/conversation/sync");
+    const res = await fetch("/api/conversation/sync?conversation_id="+encodeURIComponent(activeConversationId));
     if(!res.ok) return;
     const data = await res.json();
-    for(const row of data.messages||[]){
+    if(data.conversation_id && data.conversation_id!==activeConversationId) return;
+    const rows=sessionStore ? sessionStore.sortMessages(data.messages||[]) : (data.messages||[]);
+    if(reset){ clearConversationTranscript(); }
+    renderPinnedMessages(rows);
+    for(const row of rows){
       if(!row || !row.content || (row.role!=="user" && row.role!=="assistant")) continue;
-      const key = rowKey(row);
+      const key = rowKey(row), old=wrap.querySelector('.msg[data-conversation-key="'+CSS.escape(key)+'"]');
+      if(old){ setMessagePinVisual(old,Boolean(row.is_pinned)); continue; }
       if(seenConversationRows.has(key)) continue;
       seenConversationRows.add(key);
       const local = takePendingConversationMessage(row.role, row.content);
@@ -1594,8 +1695,8 @@ async function syncConversationOnce(){
 }
 function startConversationSync(){
   if(conversationSyncTimer) return;
-  syncConversationOnce();
-  conversationSyncTimer = setInterval(syncConversationOnce, 3000);
+  refreshSessions({load:true}).catch(()=>{});
+  conversationSyncTimer = setInterval(()=>{ refreshSessions({load:false}).catch(()=>{}); syncConversationOnce(); }, 5000);
 }
 
 const FILE_TOOLS = ["write_file","edit_file","append_file"];

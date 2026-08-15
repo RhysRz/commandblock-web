@@ -7,6 +7,7 @@
   const KEY_NAME = 'commandblock.deepseek.api-key';
   const NOTES_NAME = 'commandblock.cloud-notes';
   const ACTIVE_DEVICE_NAME = 'commandblock.active-device-id';
+  const ACTIVE_CONVERSATION_NAME = 'commandblock.active-conversation-id';
   const originalFetch = window.fetch.bind(window);
   const client = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
   const recovery = window.CommandBlockChatRecovery;
@@ -81,35 +82,70 @@
     if (!data.session) throw new Error('กรุณาเข้าสู่ระบบก่อนส่งข้อความ');
     return data.session;
   }
-  async function activeConversationForUser(session) {
-    const { data, error } = await client.from('conversations').select('id')
-      .eq('user_id', session.user.id).order('updated_at', { ascending: false }).limit(1).maybeSingle();
-    if (error) throw new Error('โหลดบทสนทนาที่ใช้งานอยู่ไม่สำเร็จ');
-    return data?.id || null;
+  function conversationStorageKey(session) {
+    return `${ACTIVE_CONVERSATION_NAME}:${session.user.id}`;
   }
-  async function ensureConversation(session, message) {
-    conversationId = await activeConversationForUser(session) || conversationId;
-    if (!conversationId && recovery) conversationId = recovery.loadConversationId(localStorage, session.user.id);
-    if (conversationId) return conversationId;
-    const title = (message || 'แชทใหม่').trim().slice(0, 80) || 'แชทใหม่';
-    const { data, error } = await client.from('conversations')
-      .insert({ user_id: session.user.id, title, model_id: MODEL }).select('id').single();
-    if (error) throw new Error('สร้างประวัติสนทนาไม่สำเร็จ');
+  async function listConversations(session) {
+    const { data, error } = await client.from('conversations').select('id,title,model_id,created_at,updated_at')
+      .eq('user_id', session.user.id).order('updated_at', { ascending: false }).order('id', { ascending: false });
+    if (error) throw new Error('โหลด SESSION ไม่สำเร็จ');
+    return data || [];
+  }
+  async function selectConversation(session, id) {
+    if (!id) return null;
+    const { data, error } = await client.from('conversations').select('id,title,model_id,created_at,updated_at')
+      .eq('id', id).eq('user_id', session.user.id).maybeSingle();
+    if (error) throw new Error('เลือก SESSION ไม่สำเร็จ');
+    if (!data) return null;
     conversationId = data.id;
-    if (recovery) recovery.saveConversationId(localStorage, session.user.id, conversationId);
-    return conversationId;
+    localStorage.setItem(conversationStorageKey(session), data.id);
+    if (recovery) recovery.saveConversationId(localStorage, session.user.id, data.id);
+    return data;
+  }
+  async function createConversation(session) {
+    const { data, error } = await client.from('conversations')
+      .insert({ user_id: session.user.id, title: 'แชทใหม่', model_id: MODEL }).select('id,title,model_id,created_at,updated_at').single();
+    if (error) throw new Error('สร้าง SESSION ไม่สำเร็จ');
+    return selectConversation(session, data.id);
+  }
+  async function activeConversationForUser(session) {
+    if (conversationId) {
+      const selected = await selectConversation(session, conversationId);
+      if (selected) return selected.id;
+    }
+    const remembered = localStorage.getItem(conversationStorageKey(session)) || recovery?.loadConversationId(localStorage, session.user.id);
+    if (remembered) {
+      const selected = await selectConversation(session, remembered);
+      if (selected) return selected.id;
+    }
+    const [latest] = await listConversations(session);
+    return latest ? (await selectConversation(session, latest.id))?.id || null : null;
+  }
+  async function ensureConversation(session) {
+    const selected = await activeConversationForUser(session);
+    if (selected) return selected;
+    return (await createConversation(session)).id;
+  }
+  async function toggleMessagePin(session, id, isPinned) {
+    const { data, error } = await client.from('messages').update({ is_pinned: Boolean(isPinned) })
+      .eq('id', id).eq('user_id', session.user.id).select('id,is_pinned').maybeSingle();
+    if (error || !data) throw new Error('บันทึกการปักหมุดไม่สำเร็จ');
+    return data;
   }
   async function saveMessage(session, role, content) {
-    const id = await ensureConversation(session, content);
-    const { error } = await client.from('messages')
-      .insert({ conversation_id: id, user_id: session.user.id, role, content });
-    if (error) throw new Error('บันทึกประวัติสนทนาไม่สำเร็จ');
-    await client.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', id);
+    const id = await ensureConversation(session);
+    const title = role === 'user' ? (content || 'แชทใหม่').trim().slice(0, 80) : null;
+    const { data, error } = await client.from('conversations')
+      .update({ updated_at: new Date().toISOString(), ...(title ? { title } : {}) }).eq('id', id).eq('user_id', session.user.id);
+    if (error) throw new Error('อัปเดต SESSION ไม่สำเร็จ');
+    const { error: messageError } = await client.from('messages')
+      .insert({ conversation_id: id, user_id: session.user.id, role, content, is_pinned: false });
+    if (messageError) throw new Error('บันทึกประวัติสนทนาไม่สำเร็จ');
     return id;
   }
   async function conversationMessages(session, id) {
     const { data, error } = await client.from('messages')
-      .select('role,content,created_at').eq('user_id', session.user.id).eq('conversation_id', id)
+      .select('id,role,content,created_at,is_pinned').eq('user_id', session.user.id).eq('conversation_id', id)
       .order('created_at', { ascending: false }).limit(16);
     if (error) throw new Error('โหลดบริบทสนทนาไม่สำเร็จ');
     return (data || []).reverse().map((row) => ({ role: row.role, content: row.content }));
@@ -326,13 +362,13 @@
       return json({ prompts: (rows || []).map((row) => row.content) });
     } catch { return json({ prompts: [] }); }
   }
-  async function cloudConversationSync() {
+  async function cloudConversationSync(input) {
     try {
       const session = await currentSession();
-      const id = await activeConversationForUser(session);
+      const requested = new URL(typeof input === 'string' ? input : input?.url, location.origin).searchParams.get('conversation_id');
+      const id = requested ? (await selectConversation(session, requested))?.id : await activeConversationForUser(session);
       if (!id) return json({ conversation_id: null, messages: [] });
-      conversationId = id;
-      const { data, error } = await client.from('messages').select('id,role,content,created_at')
+      const { data, error } = await client.from('messages').select('id,role,content,created_at,is_pinned')
         .eq('user_id', session.user.id).eq('conversation_id', id).order('created_at', { ascending: true });
       if (error) throw error;
       return json({ conversation_id: id, messages: data || [] });
@@ -542,7 +578,22 @@
     if (path === '/api/model') return json({ ok: true, backend: 'cloud', model: MODEL, base_url: 'https://api.deepseek.com' });
     if (path === '/api/chat') return cloudChat(init);
     if (path === '/api/history') return cloudHistory();
-    if (path === '/api/conversation/sync') return cloudConversationSync();
+    if (path === '/api/conversations') {
+      try {
+        const session = await currentSession();
+        if ((init?.method || 'GET').toUpperCase() === 'POST') return json({ conversation: await createConversation(session) });
+        return json({ conversations: await listConversations(session), conversation_id: await activeConversationForUser(session) });
+      } catch (error) { return json({ error: error.message || 'โหลด SESSION ไม่สำเร็จ' }, 401); }
+    }
+    if (path === '/api/conversation/sync') return cloudConversationSync(input);
+    if (/^\/api\/messages\/[^/]+\/pin$/.test(path) && (init?.method || 'GET').toUpperCase() === 'POST') {
+      try {
+        const session = await currentSession();
+        const id = path.split('/')[3];
+        const { is_pinned } = requestBody(init);
+        return json({ message: await toggleMessagePin(session, id, is_pinned) });
+      } catch (error) { return json({ error: error.message || 'บันทึกการปักหมุดไม่สำเร็จ' }, 400); }
+    }
     if (path === '/api/notes') return cloudNotes(init);
     if (path === '/api/files') return connectorResult('files', {}, (message) => ({ files: [], requires_connector: true, message }));
     if (path === '/api/changes') return connectorResult('changes', {}, (message) => ({ changes: [], requires_connector: true, message }));
