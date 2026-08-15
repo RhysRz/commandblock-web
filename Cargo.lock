@@ -739,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "commandblock"
-version = "1.0.11"
+version = "1.0.12"
 dependencies = [
  "async-trait",
  "base64",
@@ -757,6 +757,7 @@ dependencies = [
  "time",
  "tokio",
  "ureq",
+ "url",
  "webrtc",
  "winit",
  "winres",

@@ -144,6 +144,16 @@
     if (error || !data) throw new Error('บันทึกการปักหมุด SESSION ไม่สำเร็จ');
     return data;
   }
+  async function renameConversation(session, id, title) {
+    const value = String(title || '').trim();
+    if (!value || Array.from(value).length > 80) throw new Error('ชื่อ SESSION ต้องมี 1–80 ตัวอักษร');
+    const { data, error } = await client.from('conversations')
+      .update({ title: value, updated_at: new Date().toISOString() })
+      .eq('id', id).eq('user_id', session.user.id)
+      .select('id,title,model_id,is_pinned,created_at,updated_at').maybeSingle();
+    if (error || !data) throw new Error('เปลี่ยนชื่อ SESSION ไม่สำเร็จ');
+    return data;
+  }
   async function saveMessage(session, role, content) {
     const id = await ensureConversation(session);
     const title = role === 'user' ? (content || 'แชทใหม่').trim().slice(0, 80) : null;
@@ -632,6 +642,14 @@
         const { is_pinned } = requestBody(init);
         return json({ conversation: await toggleConversationPin(session, id, is_pinned) });
       } catch (error) { return json({ error: error.message || 'บันทึกการปักหมุด SESSION ไม่สำเร็จ' }, 400); }
+    }
+    if (/^\/api\/conversations\/[^/]+\/rename$/.test(path) && (init?.method || 'GET').toUpperCase() === 'POST') {
+      try {
+        const session = await currentSession();
+        const id = path.split('/')[3];
+        const { title } = requestBody(init);
+        return json({ conversation: await renameConversation(session, id, title) });
+      } catch (error) { return json({ error: error.message || 'เปลี่ยนชื่อ SESSION ไม่สำเร็จ' }, 400); }
     }
     if (path === '/api/conversation/sync') return cloudConversationSync(input);
     if (/^\/api\/messages\/[^/]+\/pin$/.test(path) && (init?.method || 'GET').toUpperCase() === 'POST') {

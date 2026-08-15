@@ -968,6 +968,11 @@
   .account-profile-body label { color:var(--muted); font-size:12px; }
   .account-profile-body input { width:100%; border:1px solid rgba(180,139,255,.28); border-radius:9px; background:rgba(255,255,255,.04); color:var(--text); font:inherit; padding:10px; outline:none; }
   .account-profile-body input:focus { border-color:var(--accent2); box-shadow:0 0 0 3px rgba(139,108,246,.14); }
+  .rename-session-body { display:grid; gap:9px; padding:20px; }
+  .rename-session-body label { color:var(--muted); font-size:12px; }
+  .rename-session-body input { width:100%; border:1px solid rgba(180,139,255,.28); border-radius:9px; background:rgba(255,255,255,.04); color:var(--text); font:inherit; padding:10px; outline:none; }
+  .rename-session-body input:focus { border-color:var(--accent2); box-shadow:0 0 0 3px rgba(139,108,246,.14); }
+  .rename-session-hint { color:var(--muted); font-size:11px; }
 
   /* ============ MOBILE (จอเล็ก ≤ 900px) ============ */
   .mob-close { display: none; }
@@ -1196,7 +1201,7 @@
   <div class="hist-head">SESSION <button id="newSession" class="session-new" type="button">+ New session</button><button class="mob-close" data-close="mobhist" title="ปิดแผง">✕</button></div>
   <div class="hist-list" id="histList"></div>
 </aside>
-<div id="messageContextMenu" role="menu" hidden><button id="togglePinMessage" type="button">📌 Pin message</button><button id="togglePinSession" type="button" hidden>📌 Pin SESSION</button><button id="deleteSession" class="context-danger" type="button" hidden>🗑 ลบ SESSION</button></div>
+<div id="messageContextMenu" role="menu" hidden><button id="togglePinMessage" type="button">📌 Pin message</button><button id="togglePinSession" type="button" hidden>📌 Pin SESSION</button><button id="renameSession" type="button" hidden>✏ Rename SESSION</button><button id="deleteSession" class="context-danger" type="button" hidden>🗑 ลบ SESSION</button></div>
 <button id="rightPaneResizer" type="button" role="separator" aria-label="ปรับขนาดแผง Terminal และ Preview" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="720" aria-valuenow="400" tabindex="0"></button>
 
 <!-- ================= RIGHT: tabs ================= -->
@@ -1734,7 +1739,12 @@ const pinnedMessages = document.getElementById("pinnedMessages");
 const messageContextMenu = document.getElementById("messageContextMenu");
 const togglePinMessage = document.getElementById("togglePinMessage");
 const togglePinSession = document.getElementById("togglePinSession");
+const renameSessionButton = document.getElementById("renameSession");
 const deleteSessionButton = document.getElementById("deleteSession");
+const renameSessionDialog = document.getElementById("renameSessionDialog");
+const renameSessionInput = document.getElementById("renameSessionInput");
+const renameSessionSave = document.getElementById("renameSessionSave");
+let renameSessionTarget = null;
 function conversationTextKey(role, content){ return role+"\n"+String(content||""); }
 function rowKey(row){ return chatTimeline.messageKey(row); }
 function rowFromMessageElement(el){
@@ -1754,6 +1764,7 @@ function openContextMenu(target, event){
   const sessionTarget=target.kind==="session";
   togglePinMessage.hidden=!messageTarget;
   togglePinSession.hidden=!sessionTarget;
+  renameSessionButton.hidden=!sessionTarget;
   deleteSessionButton.hidden=!sessionTarget;
   if(messageTarget){
     togglePinMessage.disabled=!target.id;
@@ -1823,7 +1834,7 @@ function renderSessionList(rows){
   const label=document.createElement("div"); label.className="hist-sec"; label.textContent="YOUR SESSIONS"; list.appendChild(label);
   const ordered=sessionStore ? [...rows].sort(sessionStore.compareSessions) : rows;
   ordered.forEach(row=>{
-    const item=document.createElement("button"); item.type="button"; item.className="hist-item session-item"+(row.id===activeConversationId?" active":"");
+    const item=document.createElement("button"); item.type="button"; item.dataset.sessionId=row.id; item.className="hist-item session-item"+(row.id===activeConversationId?" active":"");
     item.innerHTML='<span class="dotc">'+(row.is_pinned?"📌":"◌")+'</span><span class="txt">'+esc(row.title||"แชทใหม่")+'</span>';
     item.onclick=()=>selectSession(row.id);
     item.addEventListener("contextmenu", event=>openContextMenu({kind:"session", id:row.id, title:row.title||"แชทใหม่", is_pinned:Boolean(row.is_pinned)}, event));
@@ -1855,7 +1866,7 @@ async function createNewSession(){
 }
 document.getElementById("newSession").addEventListener("click", createNewSession);
 document.addEventListener("pointerdown", event=>{ if(!messageContextMenu.contains(event.target)) closeMessageContextMenu(); });
-document.addEventListener("keydown", event=>{ if(event.key==="Escape") closeMessageContextMenu(); });
+document.addEventListener("keydown", event=>{ if(event.key==="Escape"){ closeMessageContextMenu(); if(!renameSessionDialog.hidden) closeRenameSessionDialog(); } });
 togglePinMessage.addEventListener("click", async()=>{
   const current=contextTarget; if(!current || current.kind!=="message" || !current.id) return;
   const next=!current.is_pinned; closeMessageContextMenu();
@@ -1874,6 +1885,47 @@ togglePinSession.addEventListener("click", async()=>{
     await refreshSessions({load:false}); toast(next?"ปักหมุด SESSION แล้ว":"ยกเลิกการปักหมุด SESSION แล้ว", "ok");
   }catch(error){ toast(error.message||"บันทึกการปักหมุด SESSION ไม่สำเร็จ", "err"); }
 });
+function closeRenameSessionDialog(){
+  const target=renameSessionTarget;
+  renameSessionTarget=null;
+  renameSessionDialog.hidden=true;
+  if(target?.id) document.querySelector('.session-item[data-session-id="'+CSS.escape(target.id)+'"]')?.focus();
+}
+function updateRenameSessionSave(){
+  const value=renameSessionInput.value.trim();
+  renameSessionSave.disabled=!value || Array.from(value).length>80;
+}
+function openRenameSessionDialog(target){
+  if(!target?.id) return;
+  renameSessionTarget={id:target.id,title:target.title||"แชทใหม่"};
+  renameSessionInput.value=renameSessionTarget.title;
+  renameSessionDialog.hidden=false;
+  updateRenameSessionSave();
+  window.setTimeout(()=>{ renameSessionInput.focus(); renameSessionInput.select(); },0);
+}
+async function renameSession(id, title){
+  const res=await fetch("/api/conversations/"+encodeURIComponent(id)+"/rename",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title})});
+  const data=await res.json();
+  if(!res.ok) throw new Error(data.error||"เปลี่ยนชื่อ SESSION ไม่สำเร็จ");
+  await refreshSessions({load:false});
+  return data.conversation;
+}
+renameSessionButton.addEventListener("click",()=>{
+  const current=contextTarget; if(!current || current.kind!=="session") return;
+  closeMessageContextMenu(); openRenameSessionDialog(current);
+});
+renameSessionInput.addEventListener("input",updateRenameSessionSave);
+renameSessionInput.addEventListener("keydown",event=>{ if(event.key==="Enter" && !renameSessionSave.disabled) renameSessionSave.click(); });
+renameSessionSave.addEventListener("click",async()=>{
+  const target=renameSessionTarget; const title=renameSessionInput.value.trim();
+  if(!target || !title || Array.from(title).length>80) return;
+  renameSessionSave.disabled=true;
+  try{ await renameSession(target.id,title); closeRenameSessionDialog(); toast("เปลี่ยนชื่อ SESSION แล้ว", "ok"); }
+  catch(error){ toast(error.message||"เปลี่ยนชื่อ SESSION ไม่สำเร็จ", "err"); updateRenameSessionSave(); }
+});
+document.getElementById("renameSessionCancel").addEventListener("click",closeRenameSessionDialog);
+document.getElementById("renameSessionX").addEventListener("click",closeRenameSessionDialog);
+renameSessionDialog.addEventListener("click",event=>{ if(event.target===renameSessionDialog) closeRenameSessionDialog(); });
 async function deleteSession(id, title){
   if(!id) return;
   const confirmed=await confirmAction({
@@ -2118,7 +2170,7 @@ function renderAttachBar(){
 async function send(){
   const text=input.value.trim();
   if((!text && !attachments.length)||busy) return;
-  const requestedPreview = text === "/preview";
+  const requestedPreview = /^\/preview\b/.test(text);
   const files = attachments.filter(a=>a.kind==="text");
   const images = attachments.filter(a=>a.kind==="image");
   let msgText = text;
@@ -2630,6 +2682,14 @@ document.getElementById("fb").addEventListener("click",()=>{
     <div class="modal-head"><span class="modal-title" id="accountProfileTitle">จัดการบัญชี</span><button class="modal-x" id="accountProfileX" type="button" title="ปิด">✕</button></div>
     <div class="account-profile-body"><label for="accountDisplayName">ชื่อที่แสดง</label><input id="accountDisplayName" maxlength="60" autocomplete="name" placeholder="ชื่อของคุณ"><div class="set-desc" id="accountProfileEmail"></div></div>
     <div class="modal-foot"><span></span><span class="set-actions"><button class="btn-cancel" id="accountProfileCancel" type="button">ยกเลิก</button><button class="btn-save" id="accountProfileSave" type="button">บันทึก</button></span></div>
+  </div>
+</div>
+
+<div class="modal" id="renameSessionDialog" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="renameSessionTitle">
+    <div class="modal-head"><span class="modal-title" id="renameSessionTitle">Rename SESSION</span><button class="modal-x" id="renameSessionX" type="button" title="ปิด">✕</button></div>
+    <div class="rename-session-body"><label for="renameSessionInput">ชื่อ SESSION</label><input id="renameSessionInput" maxlength="80" autocomplete="off" placeholder="ชื่อ SESSION"><div class="rename-session-hint">ตั้งชื่อได้สูงสุด 80 ตัวอักษร</div></div>
+    <div class="modal-foot"><span></span><span class="set-actions"><button class="btn-cancel" id="renameSessionCancel" type="button">ยกเลิก</button><button class="btn-save" id="renameSessionSave" type="button">บันทึก</button></span></div>
   </div>
 </div>
 

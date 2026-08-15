@@ -11,6 +11,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+use url::{Host, Url};
 
 /// ข้อมูลไฟล์ที่ถูกแก้ไข 1 ครั้ง (สำหรับกล่องสรุปแบบ Freebuff)
 #[derive(Debug, Clone)]
@@ -1049,10 +1050,18 @@ fn truncate_chars(s: &str, max: usize) -> String {
 
 // ---------- open_preview (ดูพรีวิวเว็บในเบราว์เซอร์) ----------
 
-static PREVIEW_URL: OnceLock<String> = OnceLock::new();
+static PREVIEW_URL: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn preview_url_slot() -> &'static Mutex<Option<String>> {
+    PREVIEW_URL.get_or_init(|| Mutex::new(None))
+}
+
+fn set_preview_url(url: String) {
+    *preview_url_slot().lock().unwrap() = Some(url);
+}
 
 pub fn last_preview_url() -> Option<String> {
-    PREVIEW_URL.get().cloned()
+    preview_url_slot().lock().unwrap().clone()
 }
 
 /// สำหรับคำสั่ง /skills ใน REPL
@@ -1126,6 +1135,44 @@ pub fn reopen_preview() -> String {
     match last_preview_url() {
         Some(u) => format!("เปิดพรีวิวในแท็บ Preview ของ CommandBlock: {u}"),
         None => "ยังไม่มีพรีวิว — บอกให้ Commandblock สร้างหน้าเว็บแล้วใช้ open_preview ก่อน".to_string(),
+    }
+}
+
+fn host_is_private(host: &Host<&str>) -> bool {
+    match host {
+        Host::Domain(domain) => {
+            let domain = domain.to_ascii_lowercase();
+            domain == "localhost" || domain.ends_with(".localhost") || domain.ends_with(".local")
+        }
+        Host::Ipv4(ip) => ip.is_loopback() || ip.is_unspecified() || ip.is_private() || ip.is_link_local(),
+        Host::Ipv6(ip) => ip.is_loopback() || ip.is_unspecified() || ip.is_unique_local() || ip.is_unicast_link_local(),
+    }
+}
+
+pub fn set_https_preview_url(raw_url: &str) -> Result<String, String> {
+    let parsed = Url::parse(raw_url.trim()).map_err(|_| "ลิงก์ Preview ไม่ถูกต้อง".to_string())?;
+    if parsed.scheme() != "https" {
+        return Err("Preview URL ต้องเริ่มด้วย https:// เท่านั้น".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Preview URL ต้องไม่มีข้อมูลเข้าสู่ระบบในลิงก์".to_string());
+    }
+    let host = parsed.host().ok_or_else(|| "Preview URL ต้องมีชื่อเว็บไซต์".to_string())?;
+    if host_is_private(&host) {
+        return Err("Preview URL ต้องเป็นเว็บไซต์สาธารณะ ไม่ใช่ localhost หรือเครือข่ายภายใน".to_string());
+    }
+    let url = parsed.to_string();
+    set_preview_url(url.clone());
+    Ok(url)
+}
+
+pub fn preview_command(argument: &str) -> String {
+    if argument.trim().is_empty() {
+        return reopen_preview();
+    }
+    match set_https_preview_url(argument) {
+        Ok(url) => format!("เปิดพรีวิวในแท็บ Preview ของ CommandBlock: {url}"),
+        Err(error) => error,
     }
 }
 
@@ -1215,7 +1262,7 @@ fn open_preview(args: &Value) -> String {
         None => return "[open_preview] เปิดเซิร์ฟเวอร์พรีวิวไม่สำเร็จ (พอร์ตชน/ข้อผิดพลาด)".to_string(),
     };
     let url = format!("http://127.0.0.1:{port}/{open_file}");
-    let _ = PREVIEW_URL.set(url.clone());
+    set_preview_url(url.clone());
     format!(
         "[open_preview] เปิดแท็บ Preview ใน CommandBlock แล้ว: {url}\n(เซิร์ฟเวอร์รันที่ 127.0.0.1:{port} อยู่จนกว่าจะปิด Commandblock — ไฟล์อยู่ในโฟลเดอร์ '{}' ใช้ /preview เพื่อเปิดซ้ำได้)",
         root.display()

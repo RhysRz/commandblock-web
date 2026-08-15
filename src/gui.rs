@@ -1060,6 +1060,35 @@ fn handle(
                 ),
             }
         }
+        ("POST", _) if path.starts_with("/api/conversations/") && path.ends_with("/rename") => {
+            let conversation_id = path
+                .trim_start_matches("/api/conversations/")
+                .trim_end_matches("/rename")
+                .trim_matches('/');
+            let title = serde_json::from_str::<Value>(&body_str)
+                .ok()
+                .and_then(|value| value.get("title").and_then(Value::as_str).map(str::to_string))
+                .unwrap_or_default();
+            match cloud::rename_conversation(agent, conversation_id, &title) {
+                Ok(row) => respond(
+                    &mut out,
+                    200,
+                    "application/json",
+                    json!({"conversation": {
+                        "id": row.id, "title": row.title, "model_id": row.model_id,
+                        "is_pinned": row.is_pinned, "created_at": row.created_at, "updated_at": row.updated_at
+                    }})
+                    .to_string()
+                    .as_bytes(),
+                ),
+                Err(error) => respond(
+                    &mut out,
+                    400,
+                    "application/json",
+                    json!({"error": error}).to_string().as_bytes(),
+                ),
+            }
+        }
         ("POST", _) if path.starts_with("/api/conversations/") && path.ends_with("/delete") => {
             let conversation_id = path
                 .trim_start_matches("/api/conversations/")
@@ -1559,6 +1588,7 @@ fn try_command(message: &str, _eff: &config::Effective, shared: &Mutex<Shared>) 
         return None;
     }
     let cmd = message.split_whitespace().next().unwrap_or("");
+    let argument = message.strip_prefix(cmd).unwrap_or("").trim();
     let mut g = shared.lock().unwrap();
     let cur = g.current_eff();
     let text = match cmd {
@@ -1593,7 +1623,7 @@ fn try_command(message: &str, _eff: &config::Effective, shared: &Mutex<Shared>) 
             let _ = std::fs::remove_file(session_path_for(&g.account));
             "ล้างความจำแล้ว (ลบไฟล์ session และเริ่มใหม่)".to_string()
         }
-        "/preview" => tools::reopen_preview(),
+        "/preview" => tools::preview_command(argument),
         _ => return None,
     };
     Some(text)
@@ -1606,7 +1636,7 @@ fn commands_text() -> String {
         "  /model    ดูแบ็กเอนด์/โมเดลที่ใช้อยู่",
         "  /plan     ดูแผนงานล่าสุดของ CommandBlock",
         "  /skills   ดูรายการทักษะเฉพาะทางที่โหลดได้",
-        "  /preview  เปิดพรีวิวเว็บครั้งล่าสุดอีกครั้ง",
+        "  /preview [https://URL]  เปิดพรีวิวล่าสุด หรือเว็บไซต์ HTTPS ในแท็บ Preview",
         "  /reset    ล้างประวัติการสนทนา เริ่มใหม่",
         "  /forget   ล้างความจำทั้งหมด (ลบ buff_session.json)",
         "",

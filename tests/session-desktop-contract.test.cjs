@@ -37,6 +37,17 @@ test('desktop API persists a pin state for the selected owner-scoped SESSION', (
   assert.match(cloud, /select=id,title,model_id,is_pinned,created_at,updated_at/);
 });
 
+test('desktop API renames only the selected owner-scoped SESSION', () => {
+  const gui = fs.readFileSync(path.join(root, 'src', 'gui.rs'), 'utf8');
+  const cloud = fs.readFileSync(path.join(root, 'src', 'cloud.rs'), 'utf8');
+
+  assert.match(gui, /path\.starts_with\("\/api\/conversations\/"\).*ends_with\("\/rename"\)/s);
+  assert.match(gui, /cloud::rename_conversation/);
+  assert.match(cloud, /pub fn rename_conversation/);
+  assert.match(cloud, /"title": title, "updated_at": now_rfc3339\(\)/);
+  assert.match(cloud, /conversations\?id=eq\.\{conversation_id\}&user_id=eq/);
+});
+
 test('cloud reads pin state and scopes selected conversation requests', () => {
   const cloud = fs.readFileSync(path.join(root, 'src', 'cloud.rs'), 'utf8');
 

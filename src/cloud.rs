@@ -208,6 +208,72 @@ pub fn set_conversation_pin(
     Ok(is_pinned)
 }
 
+pub fn rename_conversation(
+    agent: &ureq::Agent,
+    conversation_id: &str,
+    title: &str,
+) -> Result<CloudConversation, String> {
+    if conversation_id.is_empty()
+        || !conversation_id
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit() || ch == '-')
+    {
+        return Err("รหัส SESSION ไม่ถูกต้อง".to_string());
+    }
+    let title = title.trim();
+    if title.is_empty() || title.chars().count() > 80 {
+        return Err("ชื่อ SESSION ต้องมี 1–80 ตัวอักษร".to_string());
+    }
+    let pair = auth::refresh_token(agent)?;
+    let a = sync_agent();
+    let url = format!(
+        "{SUPABASE_URL}/rest/v1/conversations?id=eq.{conversation_id}&user_id=eq.{}",
+        pair.user_id
+    );
+    let rows: Vec<Value> = authed(
+        a.patch(&url).set("Prefer", "return=representation"),
+        &pair.access_token,
+    )
+    .send_json(json!({"title": title, "updated_at": now_rfc3339()}))
+    .map_err(|_| "เปลี่ยนชื่อ SESSION ไม่สำเร็จ".to_string())?
+    .into_json()
+    .map_err(|_| "อ่านผลการเปลี่ยนชื่อ SESSION ไม่สำเร็จ".to_string())?;
+    let row = rows
+        .first()
+        .ok_or_else(|| "ไม่พบ SESSION นี้".to_string())?;
+    Ok(CloudConversation {
+        id: row
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "อ่านผลการเปลี่ยนชื่อ SESSION ไม่สำเร็จ".to_string())?
+            .to_string(),
+        title: row
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("แชทใหม่")
+            .to_string(),
+        model_id: row
+            .get("model_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        is_pinned: row
+            .get("is_pinned")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        created_at: row
+            .get("created_at")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        updated_at: row
+            .get("updated_at")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
 fn cloud_messages(
     a: &ureq::Agent,
     pair: &auth::TokenPair,

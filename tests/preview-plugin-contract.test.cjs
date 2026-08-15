@@ -37,6 +37,19 @@ test('Preview tools keep local previews in CommandBlock and retain an explicit b
   assert.match(ui, /window\.open\(state\.preview_url,"_blank"\)/);
 });
 
+test('the preview command accepts a published HTTPS URL without weakening local preview tools', () => {
+  const tools = fs.readFileSync(path.join(root, 'src', 'tools.rs'), 'utf8');
+  const gui = fs.readFileSync(path.join(root, 'src', 'gui.rs'), 'utf8');
+  const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
+
+  assert.match(tools, /pub fn set_https_preview_url/);
+  assert.match(tools, /pub fn preview_command/);
+  assert.match(tools, /Url::parse/);
+  assert.match(gui, /"\/preview"\s*=>\s*tools::preview_command/);
+  assert.match(ui, /const requestedPreview\s*=\s*\/\^\\\/preview\\b\/\.test\(text\)/);
+  assert.match(tools, /http:\/\/127\.0\.0\.1:/);
+});
+
 test('desktop right workspace has a persistent accessible resize handle', () => {
   const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
 

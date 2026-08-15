@@ -1,6 +1,6 @@
 [package]
 name = "commandblock"
-version = "1.0.11"
+version = "1.0.12"
 edition = "2021"
 description = "Commandblock — ผู้ช่วยพัฒนาโค้ด AI แบบตัวแทน (agentic coding assistant CLI)"
 license = "MIT"
@@ -26,6 +26,7 @@ scrap = "0.5"
 webrtc = "0.20.0-alpha.1"
 enigo = { version = "0.6", default-features = false, features = ["platform_specific"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
+url = "2"
 
 [build-dependencies]
 winres = "0.1"

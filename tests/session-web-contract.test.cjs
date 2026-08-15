@@ -27,6 +27,15 @@ test('web adapter and shared UI pin SESSION rows durably', () => {
   assert.match(adapter, /select\('id,title,model_id,is_pinned,created_at,updated_at'\)/);
 });
 
+test('browser adapter exposes an owner-scoped SESSION rename route', () => {
+  const adapter = fs.readFileSync(path.join(root, 'web', 'cloud-adapter.js'), 'utf8');
+
+  assert.match(adapter, /async function renameConversation\(session, id, title\)/);
+  assert.match(adapter, /\.update\(\{ title: value, updated_at: new Date\(\)\.toISOString\(\) \}\)/);
+  assert.match(adapter, /\.eq\('id', id\)\.eq\('user_id', session\.user\.id\)/);
+  assert.match(adapter, /\^\\\/api\\\/conversations\\\/\[\^\/\]\+\\\/rename\$/);
+});
+
 test('shared UI labels the panel SESSION and provides new-session and context pin controls', () => {
   const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
 
@@ -48,4 +57,15 @@ test('shared UI opens an Obsidian context popup for messages and SESSION deletio
   assert.match(ui, /background:\s*#120b20/);
   assert.match(ui, /kind:\s*["']session["']/);
   assert.match(adapter, /async function deleteConversation/);
+});
+
+test('shared UI renames SESSIONs with an in-app dialog instead of a browser prompt', () => {
+  const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
+
+  assert.match(ui, /id="renameSession"/);
+  assert.match(ui, /id="renameSessionDialog"/);
+  assert.match(ui, /function openRenameSessionDialog/);
+  assert.match(ui, /function renameSession/);
+  assert.match(ui, /\/api\/conversations\/"\+encodeURIComponent\(id\)\+"\/rename/);
+  assert.doesNotMatch(ui, /window\.prompt\([^\n]*SESSION/);
 });
