@@ -220,8 +220,8 @@
     color: var(--muted); line-height: 1.55; white-space: pre-wrap;
     max-height: 130px; overflow-y: auto; word-break: break-word;
   }
-  /* กล่อง To-dos (แผนงาน) */
-  .todosbox {
+  /* Work Strip — สรุปงานของ Agent แบบบรรทัดเดียว กดขยายเพื่อดู Todo/ไฟล์ */
+  .workstrip {
     margin: 7px 0 9px;
     background: var(--panel2);
     border: 1px solid var(--border);
@@ -229,29 +229,38 @@
     font-size: 12.5px;
     overflow: hidden;
   }
-  .todosbox summary {
+  .workstrip summary {
     cursor: pointer; list-style: none;
     display: flex; align-items: center; gap: 8px;
     padding: 6px 11px; font-weight: 600; color: var(--text);
-    border-bottom: 1px solid var(--border); user-select: none;
+    user-select: none;
   }
-  .todosbox summary::-webkit-details-marker { display: none; }
-  .todosbox summary .tdot {
+  .workstrip[open] summary { border-bottom: 1px solid var(--border); }
+  .workstrip summary::-webkit-details-marker { display: none; }
+  .workstrip summary .tdot {
     width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
   }
-  .todosbox summary .tcnt { margin-left: auto; font-size: 11.5px; color: var(--muted); font-weight: 400; }
-  .todosbox .tlist { padding: 4px 0; }
-  .todosbox .titem {
+  .workstrip summary .wtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .workstrip summary .tcnt { margin-left: auto; font-size: 11.5px; color: var(--muted); font-weight: 400; white-space: nowrap; }
+  .workstrip summary .wtri { color: var(--muted); transition: transform .15s; font-size: 10px; }
+  .workstrip[open] summary .wtri { transform: rotate(90deg); }
+  .workstrip .tlist { padding: 4px 0; }
+  .workstrip .titem {
     display: flex; align-items: flex-start; gap: 8px;
     padding: 4px 11px; font-size: 12px; color: var(--text); line-height: 1.5;
   }
-  .todosbox .titem .tbox {
+  .workstrip .titem .tbox {
     width: 14px; height: 14px; border-radius: 4px; margin-top: 2px; flex-shrink: 0;
     border: 1.5px solid var(--muted);
     display: flex; align-items: center; justify-content: center; font-size: 9px;
   }
-  .todosbox .titem.done .tbox { background: var(--ok); border-color: var(--ok); color: #04160a; }
-  .todosbox .titem.done .tt { color: var(--muted); text-decoration: line-through; }
+  .workstrip .titem.done .tbox { background: var(--ok); border-color: var(--ok); color: #04160a; }
+  .workstrip .titem.done .tt { color: var(--muted); text-decoration: line-through; }
+  .workstrip .work-files { border-top: 1px solid var(--border); padding: 5px 0; }
+  .workstrip .work-files-head { display: flex; justify-content: space-between; gap: 8px; padding: 1px 11px 5px; color: var(--muted); font-size: 11.5px; }
+  .workstrip .work-file { display: flex; align-items: center; gap: 8px; padding: 3px 11px; font: 11.5px Consolas, monospace; }
+  .workstrip .work-file .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .workstrip .add { color: var(--ok); } .workstrip .del { color: var(--err); margin-left: 6px; }
   .welcome { padding: 6px 2px 14px; }
   .welcome p { color: var(--muted); font-size: 13px; line-height: 1.6; margin-bottom: 10px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -319,6 +328,13 @@
     padding: 6px 4px;
     border-top: 1px solid var(--border);
   }
+  #mobileStatusToggle {
+    display: none; flex: 0 0 auto; width: 38px; height: 38px;
+    align-items: center; justify-content: center; border: 1px solid var(--border);
+    border-radius: 9px; background: var(--panel2); color: var(--text); cursor: pointer;
+    font: 19px/1 inherit;
+  }
+  #mobileStatusToggle:hover { border-color: var(--accent); }
   .statusbar .modelbtn {
     color: var(--text); background: var(--panel2); border: 1px solid var(--border);
     border-radius: 999px; padding: 3px 10px; font-size: 11.5px; max-width: 55%; overflow: hidden;
@@ -690,7 +706,7 @@
   .bubble pre, .bubble code, .term, .term-out, .fileview, textarea#notesBox, .inputbox, .term-in,
   textarea.set-script, .skill-search, .slog-out { background: var(--ink); color: var(--code-text); border-color: rgba(194, 140, 255, .18); }
   .bubble a { color: #c99dff; }
-  .toolchip, .changebox, .todosbox, .think, .attchip, .chip {
+  .toolchip, .changebox, .workstrip, .think, .attchip, .chip {
     color: var(--text); background: rgba(255, 255, 255, .07); border-color: var(--glass-edge); border-radius: 10px;
     box-shadow: inset 0 1px rgba(255, 255, 255, .08);
   }
@@ -870,7 +886,7 @@
     display: none; position: fixed; inset: 0; z-index: 55;
     background: rgba(3, 5, 10, .55); backdrop-filter: blur(2px);
   }
-  body.mobpanel .mob-backdrop, body.mobhist .mob-backdrop { display: block; }
+  body.mobpanel .mob-backdrop, body.mobhist .mob-backdrop, body.mobstatus .mob-backdrop { display: block; }
   @media (max-width: 900px) {
     /* ซ่อน panel คงที่ → กลายเป็น overlay เลื่อนจากขอบ */
     body, body.nohist { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
@@ -907,8 +923,21 @@
     .chat-head { flex-wrap: wrap; gap: 8px; }
     .chat-title .sub { display: none; }
     .chat-title h1 { font-size: 15px; }
-    .statusbar { flex-wrap: wrap; row-gap: 6px; }
-    .statusbar .usagebar { margin-left: 0; }
+    #mobileStatusToggle { display: inline-flex; }
+    .statusbar {
+      position: fixed; z-index: 61; inset: 0 0 0 auto; width: min(88vw, 360px);
+      margin: 0; padding: 22px 16px; flex-direction: column; align-items: stretch; gap: 12px;
+      background: var(--panel); border: 1px solid var(--border); border-right: none;
+      box-shadow: -16px 0 38px rgba(0,0,0,.42); transform: translateX(105%);
+      transition: transform .28s ease; overflow-y: auto;
+    }
+    body.mobstatus .statusbar { transform: translateX(0); }
+    .statusbar .modelwrap, .statusbar .modelbtn, .statusbar .usagebar { width: 100%; }
+    .statusbar .modelbtn { max-width: none; justify-content: space-between; }
+    .statusbar .sp { display: none; }
+    .statusbar .usagebar { margin-left: 0; flex-wrap: wrap; }
+    .statusbar #statsRight { order: 4; }
+    .statusbar .dot { order: -1; }
     .feedback { display: none; }
     #chat { padding: 12px 10px 6px; }
     .msg .avatar { width: 30px; height: 30px; font-size: 13px; }
@@ -1015,6 +1044,7 @@
     <div class="inputbox">
       <button class="attach" id="attachBtn" title="แนบไฟล์ / วางรูป (Ctrl+V)">📎</button>
       <textarea id="input" rows="1" placeholder="Type a message — / for skills, @ for files (วางรูปได้ด้วย Ctrl+V)"></textarea>
+      <button id="mobileStatusToggle" type="button" aria-label="เปิดข้อมูลสถานะ" aria-controls="mobileStatusDrawer" aria-expanded="false">☰</button>
       <button id="send" title="ส่ง (Enter)">↵</button>
     </div>
     <div class="folderbar" id="folderBar" title="โฟลเดอร์ปัจจุบัน">
@@ -1029,7 +1059,7 @@
       <details class="update-notes" id="updateNotes" hidden><summary>รายการเปลี่ยนแปลง</summary><pre id="updateNotesText"></pre><a id="updateNotesLink" target="_blank" rel="noopener" hidden>เปิด release บน GitHub</a></details>
     </div>
     <input type="file" id="fileInput" multiple hidden>
-    <div class="statusbar">
+    <div class="statusbar" id="mobileStatusDrawer" aria-label="ข้อมูลสถานะและบัญชี">
       <span class="dot">●</span>
       <span class="modelwrap">
         <button class="modelbtn" id="modelPill">กำลังเชื่อมต่อ… <span class="tri">▼</span></button>
@@ -1482,12 +1512,11 @@ function toolLabel(name, argsStr){
   return ic + " " + act + (path ? " " + path : "");
 }
 function toolHTML(name, argsStr){
-  if (FILE_TOOLS.includes(name)) return ""; // ไฟล์ที่แก้ → กล่องสรุป (เหตุการณ์ "change") จัดการแทน
-  return '<div class="tools"><span class="toolchip"><span class="ic">' + toolLabel(name, argsStr) + "</span></span></div>";
+  return ""; // รายละเอียดรวมอยู่ใน Work Strip เดียวของ turn นี้
 }
-/* กล่องสรุปไฟล์ที่แก้ของเทิร์นนี้ (แบบ Freebuff) */
+/* สถานะงานของ turn นี้ — Work Strip เดียว ลดบรรทัดเครื่องมือที่ยาว */
 let turnChanges = new Map();
-/* ---------- To-dos (แผนงานแบบ Freebuff) ---------- */
+let turnActivity = "";
 let todos = [];
 function setTodos(planText, bub){
   const lines = (planText||"").split("\n");
@@ -1503,42 +1532,35 @@ function setTodos(planText, bub){
     for(const raw of lines){ const l = raw.trim(); if(l && l.length>3) items.push(l); }
   }
   todos = items.map(t=>({text:t, done:false}));
-  renderTodos(bub);
+  renderWorkStrip(bub);
 }
-function renderTodos(bub){
-  if(!todos.length) return;
-  let box = bub.querySelector("details.todosbox");
+function renderWorkStrip(bub){
+  if(!bub) return;
+  const files = [...turnChanges.values()];
+  if(!todos.length && !files.length && !turnActivity) return;
+  let box = bub.querySelector("details.workstrip");
   if(!box){
-    box = document.createElement("details"); box.className="todosbox"; box.open=true;
+    box = document.createElement("details"); box.className="workstrip";
     bub.insertBefore(box, bub.querySelector(".cursor"));
   }
   const done = todos.filter(t=>t.done).length;
-  box.innerHTML = '<summary><span class="tdot"></span><span>To-dos ' + done + "/" + todos.length + '</span><span class="tcnt">' + (done===todos.length?"✓ เสร็จ":done+"/"+todos.length) + '</span></summary><div class="tlist">' +
-    todos.map((t,i)=>'<div class="titem'+(t.done?" done":"")+'"><span class="tbox">'+(t.done?"✓":"")+'</span><span class="tt">'+esc(t.text)+"</span></div>").join("")+"</div>";
+  const totA = files.reduce((sum,file)=>sum+file.added,0);
+  const totD = files.reduce((sum,file)=>sum+file.deleted,0);
+  const title = turnActivity || (todos.length ? "กำลังทำตามแผน" : "กำลังสรุปการเปลี่ยนแปลง");
+  const progress = todos.length ? done+"/"+todos.length : "";
+  const delta = files.length ? files.length+" files changed <span class=\"add\">+"+totA+"</span><span class=\"del\">-"+totD+"</span>" : "";
+  const todoHtml = todos.length ? '<div class="tlist">'+todos.map(t=>'<div class="titem'+(t.done?" done":"")+'"><span class="tbox">'+(t.done?"✓":"")+'</span><span class="tt">'+esc(t.text)+"</span></div>").join("")+"</div>" : "";
+  const filesHtml = files.length ? '<div class="work-files"><div class="work-files-head"><span>'+files.length+' files changed</span><span><span class="add">+'+totA+'</span><span class="del">-'+totD+'</span></span></div>'+files.map(f=>'<div class="work-file"><span class="st '+esc(f.status)+'">'+esc(f.status)+'</span><span class="path">'+esc(f.path)+'</span><span><span class="add">+'+f.added+'</span><span class="del">-'+f.deleted+'</span></span></div>').join("")+"</div>" : "";
+  box.innerHTML = '<summary><span class="tdot"></span><span class="wtitle">'+esc(title)+'</span><span class="tcnt">'+progress+(progress&&delta?" · ":"")+delta+'</span><span class="wtri">▶</span></summary>'+todoHtml+filesHtml;
 }
 function checkNextTodo(){
   const next = todos.find(t=>!t.done);
-  if(next){ next.done = true; renderTodos(lastBub); }
+  if(next){ next.done = true; renderWorkStrip(lastBub); }
 }
-
-function renderChangeBox(bub){
-  const files = [...turnChanges.values()];
-  if(!files.length) return;
-  let box = bub.querySelector(".changebox");
-  if(!box){
-    box = document.createElement("div"); box.className="changebox";
-    bub.insertBefore(box, bub.querySelector(".cursor"));
-  }
-  const totA = files.reduce((s,f)=>s+f.added,0);
-  const totD = files.reduce((s,f)=>s+f.deleted,0);
-  let html = '<div class="chhead"><span>Agent changed '+files.length+' file'+(files.length>1?"s":"")+
-    '</span><span class="chsum"><span class="add">+'+totA+'</span><span class="del">-'+totD+'</span></span></div>';
-  files.forEach(f=>{
-    html += '<div class="chrow"><span class="st '+esc(f.status)+'">'+esc(f.status)+'</span>' +
-      '<span class="cp">'+esc(f.path)+'</span>' +
-      '<span class="chstat"><span class="add">+'+f.added+'</span><span class="del">-'+f.deleted+'</span></span></div>';
-  });
-  box.innerHTML = html;
+function recordTurnChange(change, bub){
+  const prev = turnChanges.get(change.path);
+  turnChanges.set(change.path,{path:change.path,status:change.status||"M",added:(prev?prev.added:0)+(change.added||0),deleted:(prev?prev.deleted:0)+(change.deleted||0)});
+  renderWorkStrip(bub);
 }
 /* welcome + chips */
 const EXAMPLES=[
@@ -1631,7 +1653,7 @@ async function send(){
     (sentAtts.length ? '<div class="atts">'+sentAtts.map(a=>a.kind==="image" ? '<img src="'+a.thumb+'" class="attimg">' : '<span class="attmini">📄 '+esc(a.name)+'</span>').join("")+'</div>' : "");
   addMsg("user",userHtml);
   addToHistory(text || "(ไฟล์แนบ)");
-  turnChanges = new Map();
+  turnChanges = new Map(); turnActivity = ""; todos = [];
   setBusy(true);    const thinking=addMsg("assistant",'<span class="note">กำลังคิด…</span>');
     let bub=null;
     try{
@@ -1674,14 +1696,13 @@ async function send(){
               scrollBottom();
             }
             else if(ev==="tool"&&obj){
-              const h=toolHTML(obj.name,obj.args); if(h){ cur.insertAdjacentHTML("beforebegin",h); scrollBottom(); }
-              if(obj.name==="update_plan"){ try{ const a=JSON.parse(obj.args); setTodos(a.plan||"", bub); }catch(e){} }
-              else checkNextTodo();
+              turnActivity = toolLabel(obj.name,obj.args);
+              if(obj.name==="update_plan"){ try{ const a=JSON.parse(obj.args); setTodos(a.plan||"", bub); }catch(e){ renderWorkStrip(bub); } }
+              else { checkNextTodo(); renderWorkStrip(bub); }
+              scrollBottom();
             }
             else if(ev==="change"&&obj&&obj.path){
-              const prev=turnChanges.get(obj.path);
-              turnChanges.set(obj.path,{path:obj.path,status:obj.status||"M",added:(prev?prev.added:0)+(obj.added||0),deleted:(prev?prev.deleted:0)+(obj.deleted||0)});
-              renderChangeBox(bub); scrollBottom();
+              recordTurnChange(obj, bub); scrollBottom();
             }
             else if(ev === "usage" && obj){ recordUsage(obj); }
             else if(ev === "resume" && obj && obj.t){
@@ -1777,8 +1798,17 @@ document.querySelectorAll(".mob-close").forEach(b=>{
   b.addEventListener("click",()=>document.body.classList.remove(b.dataset.close));
 });
 document.getElementById("mobBackdrop").addEventListener("click",()=>{
-  document.body.classList.remove("mobhist","mobpanel");
+  document.body.classList.remove("mobhist","mobpanel","mobstatus");
+  document.getElementById("mobileStatusToggle").setAttribute("aria-expanded","false");
 });
+const mobileStatusToggle = document.getElementById("mobileStatusToggle");
+function setMobileStatusDrawer(open){
+  document.body.classList.toggle("mobstatus", Boolean(open));
+  mobileStatusToggle.setAttribute("aria-expanded", String(Boolean(open)));
+  if(!open) mobileStatusToggle.focus();
+}
+mobileStatusToggle.addEventListener("click",()=>setMobileStatusDrawer(!document.body.classList.contains("mobstatus")));
+document.addEventListener("keydown",e=>{ if(e.key==="Escape" && document.body.classList.contains("mobstatus")) setMobileStatusDrawer(false); });
 document.querySelector("#iconrail .irail-btn[data-act='toggle-hist']").addEventListener("click",()=>{
   if (isMobileView()) {
     document.body.classList.toggle("mobhist");
