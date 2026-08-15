@@ -3,9 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-test('the plugin branding and account menu release increments the desktop package version', () => {
+test('the in-app Preview and resize release increments the desktop package version', () => {
   const cargo = fs.readFileSync(path.join(__dirname, '..', 'Cargo.toml'), 'utf8');
-  assert.match(cargo, /^version = "1\.0\.10"$/m);
+  assert.match(cargo, /^version = "1\.0\.11"$/m);
 });
 
 test('SESSION list uses a low-glare obsidian surface instead of white cards', () => {

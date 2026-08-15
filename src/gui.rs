@@ -1741,7 +1741,12 @@ impl TurnSink for SseSink<'_> {
     fn note(&mut self, msg: &str) {
         let _ = sse(self.out, "note", json!({"t": msg}));
     }
-    fn result(&mut self, _text: &str) {
+    fn result(&mut self, text: &str) {
+        // เหตุการณ์ tool ถูกส่งก่อนรันจริง จึงแจ้งอีกครั้งเมื่อ Preview สร้าง URL เสร็จแล้ว
+        // เพื่อให้ UI โหลด iframe หลัง PREVIEW_URL ถูกบันทึกเรียบร้อย
+        if text.starts_with("[open_preview]") || text.starts_with("[Preview:") {
+            let _ = sse(self.out, "preview_ready", json!({}));
+        }
         // หลังรันเครื่องมือไฟล์สำเร็จ → ส่งเหตุการณ์ "change" ให้ UI อัปเดตกล่องสรุป
         if let Some(e) = tools::take_last_change() {
             let _ = sse(

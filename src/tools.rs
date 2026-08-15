@@ -185,7 +185,7 @@ pub fn tool_schemas() -> Vec<Value> {
         }}),
         json!({"type":"function","function":{
             "name":"open_preview",
-            "description":"เปิดพรีวิวเว็บให้ผู้ใช้เห็นภาพจริงในเบราว์เซอร์ (รันเซิร์ฟเวอร์ local + เปิด browser อัตโนมัติ) — ใช้เมื่อผู้ใช้ขอ 'ดูพรีวิว/แสดงหน้าเว็บ' หรือเมื่อสร้างเว็บแอป/หน้า HTML เพื่อให้ผู้ใช้เห็นผลลัพธ์ทันที",
+            "description":"เปิดพรีวิวเว็บในแท็บ Preview ของ CommandBlock (รันเซิร์ฟเวอร์ local) — ใช้เมื่อผู้ใช้ขอ 'ดูพรีวิว/แสดงหน้าเว็บ' หรือเมื่อสร้างเว็บแอป/หน้า HTML เพื่อให้ผู้ใช้เห็นผลลัพธ์ทันที",
             "parameters":{"type":"object","properties":{
                 "html":{"type":"string","description":"เนื้อหา HTML ทั้งหน้า (ใช้อย่างใดอย่างหนึ่งกับ path) — จะบันทึกเป็น preview/index.html"},
                 "path":{"type":"string","description":"พาธไฟล์ .html หรือโฟลเดอร์เว็บ (ใช้อย่างใดอย่างหนึ่งกับ html)"}
@@ -1121,13 +1121,10 @@ pub fn load_skill_content(name: &str) -> Option<String> {
     None
 }
 
-/// เปิด URL ในเบราว์เซอร์เริ่มต้นของผู้ใช้ (ใช้จากคำสั่ง /preview ได้ด้วย)
+/// คืน URL ให้หน้าต่าง GUI โหลดในแท็บ Preview (ใช้จากคำสั่ง /preview ได้ด้วย)
 pub fn reopen_preview() -> String {
     match last_preview_url() {
-        Some(u) => {
-            open_browser(&u);
-            format!("เปิดพรีวิวอีกครั้ง: {u}")
-        }
+        Some(u) => format!("เปิดพรีวิวในแท็บ Preview ของ CommandBlock: {u}"),
         None => "ยังไม่มีพรีวิว — บอกให้ Commandblock สร้างหน้าเว็บแล้วใช้ open_preview ก่อน".to_string(),
     }
 }
@@ -1142,7 +1139,7 @@ fn local_preview_url() -> Result<String, String> {
 
 fn preview_open() -> String {
     match local_preview_url() {
-        Ok(url) => { open_browser(&url); format!("[Preview: เปิด] {url}") }
+        Ok(url) => format!("[Preview: เปิด] เปิดแท็บ Preview ใน CommandBlock: {url}"),
         Err(error) => format!("[Preview: เปิด] {error}"),
     }
 }
@@ -1157,7 +1154,7 @@ fn preview_inspect() -> String {
 fn preview_click(args: &Value) -> String {
     let selector = arg_str(args, "selector").unwrap_or("องค์ประกอบที่ระบุ");
     match local_preview_url() {
-        Ok(url) => { open_browser(&url); format!("[Preview: คลิก] เปิด {url} แล้ว — กรุณาคลิก {selector} ใน Preview เพื่อทดสอบ") }
+        Ok(url) => format!("[Preview: คลิก] เปิดแท็บ Preview ใน CommandBlock ที่ {url} แล้ว — กรุณาคลิก {selector} ใน Preview เพื่อทดสอบ"),
         Err(error) => format!("[Preview: คลิก] {error}"),
     }
 }
@@ -1165,7 +1162,7 @@ fn preview_click(args: &Value) -> String {
 fn preview_fill(args: &Value) -> String {
     let selector = arg_str(args, "selector").unwrap_or("ช่องกรอก");
     match local_preview_url() {
-        Ok(url) => { open_browser(&url); format!("[Preview: กรอก] เปิด {url} แล้ว — กรุณากรอกค่าทดสอบใน {selector}") }
+        Ok(url) => format!("[Preview: กรอก] เปิดแท็บ Preview ใน CommandBlock ที่ {url} แล้ว — กรุณากรอกค่าทดสอบใน {selector}"),
         Err(error) => format!("[Preview: กรอก] {error}"),
     }
 }
@@ -1218,10 +1215,9 @@ fn open_preview(args: &Value) -> String {
         None => return "[open_preview] เปิดเซิร์ฟเวอร์พรีวิวไม่สำเร็จ (พอร์ตชน/ข้อผิดพลาด)".to_string(),
     };
     let url = format!("http://127.0.0.1:{port}/{open_file}");
-    open_browser(&url);
     let _ = PREVIEW_URL.set(url.clone());
     format!(
-        "[open_preview] เปิดพรีวิวในเบราว์เซอร์แล้ว: {url}\n(เซิร์ฟเวอร์รันที่ 127.0.0.1:{port} อยู่จนกว่าจะปิด Commandblock — ไฟล์อยู่ในโฟลเดอร์ '{}' ใช้ /preview เพื่อเปิดซ้ำได้)",
+        "[open_preview] เปิดแท็บ Preview ใน CommandBlock แล้ว: {url}\n(เซิร์ฟเวอร์รันที่ 127.0.0.1:{port} อยู่จนกว่าจะปิด Commandblock — ไฟล์อยู่ในโฟลเดอร์ '{}' ใช้ /preview เพื่อเปิดซ้ำได้)",
         root.display()
     )
 }

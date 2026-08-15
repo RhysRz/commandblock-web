@@ -19,6 +19,7 @@
     --ok: #b899ff;
     --warn: #c7a7ff;
     --err: #dfc6ff;
+    --rightpane-width: 400px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -27,12 +28,12 @@
     color: var(--text);
     font-family: "Segoe UI", "Noto Sans Thai", "Tahoma", sans-serif;
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) minmax(140px, 230px) minmax(240px, 400px);
+    grid-template-columns: 44px minmax(0, 1fr) minmax(140px, 230px) 8px var(--rightpane-width);
     height: 100vh;
     overflow: hidden;
   }
   body.nohist { grid-template-columns: 44px minmax(0, 1fr); }
-  body.nohist #histpane, body.nohist #rightpane { display: none; }
+  body.nohist #histpane, body.nohist #rightpane, body.nohist #rightPaneResizer { display: none; }
 
   /* ============ ACTIVITY BAR (แถบไอคอนแนวตั้ง) ============ */
   #iconrail {
@@ -460,6 +461,19 @@
 
   /* ============ RIGHT: tabs ============ */
   #rightpane { display: flex; flex-direction: column; min-width: 0; }
+  #rightPaneResizer {
+    grid-column: 4; width: 8px; min-height: 0; cursor: col-resize; position: relative;
+    background: transparent; border: 0; padding: 0; touch-action: none;
+  }
+  #rightPaneResizer::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px;
+    background: transparent; border-radius: 99px; transition: background .15s, box-shadow .15s;
+  }
+  #rightPaneResizer:hover::after, #rightPaneResizer:focus-visible::after, body.resizing-rightpane #rightPaneResizer::after {
+    background: var(--accent2); box-shadow: 0 0 13px rgba(172, 111, 255, .8);
+  }
+  #rightPaneResizer:focus-visible { outline: none; }
+  body.resizing-rightpane { cursor: col-resize; user-select: none; }
   .tabbar {
     display: flex; align-items: center; gap: 2px;
     background: var(--panel); border-bottom: 1px solid var(--border);
@@ -968,6 +982,7 @@
     :root { --mobile-top-clearance: calc(env(safe-area-inset-top, 0px) + 6px); }
     body, body.nohist { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
     body.nohist #histpane, body.nohist #rightpane { display: block; }
+    #rightPaneResizer { display: none; }
     #iconrail { display: none; }
     .mobile-fab {
       display: inline-flex; position: fixed; z-index: 70; width: 40px; height: 40px;
@@ -1182,6 +1197,7 @@
   <div class="hist-list" id="histList"></div>
 </aside>
 <div id="messageContextMenu" role="menu" hidden><button id="togglePinMessage" type="button">📌 Pin message</button><button id="togglePinSession" type="button" hidden>📌 Pin SESSION</button><button id="deleteSession" class="context-danger" type="button" hidden>🗑 ลบ SESSION</button></div>
+<button id="rightPaneResizer" type="button" role="separator" aria-label="ปรับขนาดแผง Terminal และ Preview" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="720" aria-valuenow="400" tabindex="0"></button>
 
 <!-- ================= RIGHT: tabs ================= -->
 <section id="rightpane">
@@ -2102,6 +2118,7 @@ function renderAttachBar(){
 async function send(){
   const text=input.value.trim();
   if((!text && !attachments.length)||busy) return;
+  const requestedPreview = text === "/preview";
   const files = attachments.filter(a=>a.kind==="text");
   const images = attachments.filter(a=>a.kind==="image");
   let msgText = text;
@@ -2115,6 +2132,7 @@ async function send(){
   rememberConversationMessage("user", msgText, userMessage);
   addToHistory(text || "(ไฟล์แนบ)");
   turnChanges = new Map(); turnActivity = ""; todos = [];
+  if(requestedPreview) switchTab("preview");
   setBusy(true);    const thinking=addMsg("assistant",'<span class="note">กำลังคิด…</span>');
     let textSegment=null;
     let workSegment=null;
@@ -2187,10 +2205,13 @@ async function send(){
             else if(ev==="tool"&&obj){
               const work=ensureWorkSegment();
               turnActivity = toolLabel(obj.name,obj.args);
-              if(String(obj.name||"").startsWith("preview_")) switchTab("preview");
+              if(obj.name === "open_preview" || String(obj.name||"").startsWith("preview_")) switchTab("preview");
               if(obj.name==="update_plan"){ try{ const a=JSON.parse(obj.args); setTodos(a.plan||"", work.bubble); }catch(e){ renderWorkStrip(work.bubble); } }
               else { checkNextTodo(); renderWorkStrip(work.bubble); }
               scrollBottom();
+            }
+            else if(ev === "preview_ready"){
+              switchTab("preview");
             }
             else if(ev==="change"&&obj&&obj.path){
               recordTurnChange(obj, ensureWorkSegment().bubble); scrollBottom();
@@ -2298,6 +2319,7 @@ document.querySelectorAll(".mob-close").forEach(b=>{
   });
 });
 const rightPane = document.getElementById("rightpane");
+const rightPaneResizer = document.getElementById("rightPaneResizer");
 const histPane = document.getElementById("histpane");
 const mobileStatusDrawer = document.getElementById("mobileStatusDrawer");
 const statusHome = document.createComment("statusbar desktop home");
@@ -2328,6 +2350,51 @@ function setMobileHistoryDrawer(open){
   if(visible) document.body.classList.remove("mobmenu");
   mobileHistoryToggle.setAttribute("aria-expanded", String(visible));
 }
+const RIGHT_PANE_MIN = 240;
+const RIGHT_PANE_MAX = 720;
+const RIGHT_PANE_WIDTH_KEY = "commandblock.rightPaneWidth";
+function setRightPaneWidth(width){
+  const next = Math.max(240, Math.min(720, Math.round(width)));
+  document.documentElement.style.setProperty("--rightpane-width", `${next}px`);
+  rightPaneResizer.setAttribute("aria-valuenow", String(next));
+  try { localStorage.setItem(RIGHT_PANE_WIDTH_KEY, String(next)); } catch (_) {}
+}
+function restoreRightPaneWidth(){
+  try {
+    const saved = Number(localStorage.getItem(RIGHT_PANE_WIDTH_KEY));
+    if(Number.isFinite(saved)) setRightPaneWidth(saved);
+  } catch (_) {}
+}
+function setRightPaneWidthFromPointer(clientX){ setRightPaneWidth(window.innerWidth - clientX); }
+let rightPanePointerId = null;
+rightPaneResizer.addEventListener("pointerdown", event=>{
+  if(isMobileView()) return;
+  rightPanePointerId = event.pointerId;
+  rightPaneResizer.setPointerCapture(event.pointerId);
+  document.body.classList.add("resizing-rightpane");
+  setRightPaneWidthFromPointer(event.clientX);
+  event.preventDefault();
+});
+rightPaneResizer.addEventListener("pointermove", event=>{
+  if(event.pointerId === rightPanePointerId) setRightPaneWidthFromPointer(event.clientX);
+});
+function finishRightPaneResize(event){
+  if(event.pointerId !== rightPanePointerId) return;
+  rightPanePointerId = null;
+  document.body.classList.remove("resizing-rightpane");
+}
+rightPaneResizer.addEventListener("pointerup", finishRightPaneResize);
+rightPaneResizer.addEventListener("pointercancel", finishRightPaneResize);
+rightPaneResizer.addEventListener("keydown", event=>{
+  const current = Number(rightPaneResizer.getAttribute("aria-valuenow")) || 400;
+  if(event.key === "ArrowLeft") setRightPaneWidth(current + 20);
+  else if(event.key === "ArrowRight") setRightPaneWidth(current - 20);
+  else if(event.key === "Home") setRightPaneWidth(RIGHT_PANE_MIN);
+  else if(event.key === "End") setRightPaneWidth(RIGHT_PANE_MAX);
+  else return;
+  event.preventDefault();
+});
+restoreRightPaneWidth();
 syncMobileStatusPlacement();
 window.addEventListener("resize", syncMobileStatusPlacement);
 mobileMenuToggle.addEventListener("click",()=>setMobileMenuDrawer(!document.body.classList.contains("mobmenu")));
@@ -2442,9 +2509,13 @@ async function loadQueue(){
 }
 
 /* ---------- preview ---------- */
-function refreshPreview(){
+async function refreshPreview(){
   const frame=document.getElementById("previewFrame");
   const hint=document.getElementById("previewHint");
+  try {
+    const latest = await fetch("/api/state").then(r=>r.ok ? r.json() : null);
+    if(latest && typeof latest.preview_url === "string") state.preview_url = latest.preview_url;
+  } catch (_) {}
   if(state.preview_url){
     hint.hidden=true; frame.hidden=false;
     if(frame.src!==state.preview_url) frame.src=state.preview_url;
