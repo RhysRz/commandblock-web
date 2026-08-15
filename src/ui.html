@@ -1624,6 +1624,36 @@ const EXAMPLES=[
 let busy=false;
 let lastBub = null;
 function setBusy(b){ busy=b; sendBtn.disabled=b; sendBtn.textContent=b?"…":"↵"; }
+const THINK_RENDER_DELAY_MS = 200;
+const THINK_VISIBLE_CHAR_LIMIT = 3000;
+let pendingThinkingRender = null;
+let thinkingRenderTimer = null;
+function thinkingCard(bub){
+  let th = bub.querySelector("details.think");
+  if(!th){
+    th = document.createElement("details"); th.className="think"; th.open=false;
+    th.innerHTML='<summary><span class="tri">▶</span><span class="thk">Thinking</span><span class="think-count"></span></summary><div class="thinkb"></div>';
+    bub.querySelector(".cursor").insertAdjacentElement("beforebegin", th);
+  }
+  return th;
+}
+function flushThinkingRender(){
+  if(thinkingRenderTimer){ clearTimeout(thinkingRenderTimer); thinkingRenderTimer=null; }
+  const current = pendingThinkingRender;
+  pendingThinkingRender = null;
+  if(!current) return;
+  const {bub, fullText} = current;
+  const th = thinkingCard(bub);
+  const clipped = fullText.length > THINK_VISIBLE_CHAR_LIMIT;
+  th.querySelector(".think-count").textContent = " · " + fullText.length.toLocaleString() + " ตัวอักษร";
+  th.querySelector(".thinkb").textContent = (clipped ? "… แสดงเฉพาะช่วงท้าย\n\n" : "") + fullText.slice(-THINK_VISIBLE_CHAR_LIMIT);
+  scrollBottom();
+}
+function scheduleThinkingRender(bub, fullText){
+  pendingThinkingRender = {bub, fullText};
+  if(thinkingRenderTimer) return;
+  thinkingRenderTimer = setTimeout(flushThinkingRender, THINK_RENDER_DELAY_MS);
+}
 function parseFrame(frame,cb){
   let ev="message",data="";
   for(const line of frame.split("\n")){ if(line.startsWith("event:"))ev=line.slice(6).trim(); else if(line.startsWith("data:"))data+=line.slice(5).trim(); }
@@ -1716,6 +1746,7 @@ async function send(){
       const cur=document.createElement("span"); cur.className="cursor"; bub.appendChild(cur);
       thinking.remove(); scrollBottom();
       let acc="";
+      let thinkingText="";
       const reader=res.body.getReader(); const dec=new TextDecoder(); let buf="";
       while(true){
         const {done,value}=await reader.read();
@@ -1727,17 +1758,8 @@ async function send(){
           parseFrame(frame,(ev,obj)=>{
             if(ev==="content"&&obj&&obj.t){ acc+=obj.t; txt.innerHTML=renderMarkdown(acc); scrollBottom(); }
             else if(ev==="think"&&obj&&obj.t){
-              // ความคิดของโมเดล — แสดงแบบเรียลไทม์ (กล่อง Thinking)
-              let th = bub.querySelector("details.think");
-              if(!th){
-                th = document.createElement("details"); th.className="think"; th.open=true;
-                th.innerHTML='<summary><span class="tri">▶</span><span class="thk">Thinking</span></summary><div class="thinkb"></div>';
-                cur.insertAdjacentElement("beforebegin", th);
-              }
-              const tb = th.querySelector(".thinkb");
-              tb.textContent += obj.t;
-              tb.scrollTop = tb.scrollHeight;
-              scrollBottom();
+              thinkingText += obj.t;
+              scheduleThinkingRender(bub, thinkingText);
             }
             else if(ev==="tool"&&obj){
               turnActivity = toolLabel(obj.name,obj.args);
@@ -1761,6 +1783,7 @@ async function send(){
           });
         }
       }
+      flushThinkingRender();
       if(acc) { txt.innerHTML=renderMarkdown(acc); rememberConversationMessage("assistant", acc); }
       else if(!bub.querySelector(".note")&&!bub.querySelector(".changebox")&&!bub.querySelector(".changecard")) txt.innerHTML='<span class="err">(ไม่มีคำตอบจาก AI)</span>';
       cur.remove();
@@ -1769,7 +1792,7 @@ async function send(){
     }catch(e){
       const target = bub || thinking;
       target.innerHTML='<div class="txt"><span class="err">เกิดข้อผิดพลาด: '+esc(String(e))+"</span></div>"; scrollBottom();
-    }finally{ setBusy(false); input.focus(); }
+    }finally{ flushThinkingRender(); setBusy(false); input.focus(); }
 }
 
 /* ---------- input ---------- */
