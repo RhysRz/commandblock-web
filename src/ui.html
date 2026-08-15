@@ -1432,7 +1432,7 @@ setInterval(refreshUpdate, 1200);
 const modelMenu = document.getElementById("modelMenu");
 const modelPill = document.getElementById("modelPill");
 const mobileModelSelect = document.getElementById("mobileModelSelect");
-function modelLabel(m){ return m.backend + " · " + m.model; }
+function modelLabel(m){ return (m.source || "config") + " · " + m.name; }
 function setModelPill(s){
   state.model = s.model; state.base_url = s.base_url;
   modelPill.innerHTML = esc(s.backend + " · " + s.model) + ' <span class="tri">▼</span>';
