@@ -85,6 +85,8 @@ const MAX_TOOL_RESULT_IN_HISTORY: usize = 6000;
 const MAX_HISTORY: usize = 60; // จำนวนข้อความสูงสุดที่ส่งให้ AI ต่อรอบ (ตัดเก่าเมื่อเกิน)
 const SESSION_FILE: &str = "buff_session.json"; // ความจำข้ามเซสชัน
 const SESSION_KEEP: usize = 20; // จำนวนข้อความล่าสุดที่บันทึกลง session
+const REPEATED_CALL_LIMIT: usize = 2;
+const TOOL_NAME_LIMIT: usize = 12;
 
 fn main() {
     diagnostics::install_panic_reporter();
@@ -368,6 +370,30 @@ fn append_skipped_tool_results(history: &mut Vec<Value>, calls: &[llm::ToolCall]
     }
 }
 
+fn is_tool_loop(
+    calls: &[llm::ToolCall],
+    seen_calls: &[(String, Value)],
+    name_counts: &mut std::collections::HashMap<String, usize>,
+) -> bool {
+    for tc in calls {
+        if tc.name != "update_plan" {
+            let same_call_count = seen_calls
+                .iter()
+                .filter(|(name, args)| name == &tc.name && args == &tc.arguments)
+                .count();
+            if same_call_count >= REPEATED_CALL_LIMIT {
+                return true;
+            }
+        }
+        let count = name_counts.entry(tc.name.clone()).or_insert(0);
+        *count += 1;
+        if tc.name != "update_plan" && *count > TOOL_NAME_LIMIT {
+            return true;
+        }
+    }
+    false
+}
+
 /// วน agentic loop: ให้ LLM คิด → ใช้เครื่องมือ → ส่งผลกลับ → จนกว่าไม่มี tool call
 /// ผลลัพธ์ทั้งหมดส่งผ่าน `sink` (CLI พิมพ์จอ / GUI ส่ง SSE)
 pub fn run_turn(
@@ -514,22 +540,8 @@ pub fn run_turn(
                 sink.note("(ข้อความถูกตัดเพราะยาวเกิน — พิมพ์ 'ต่อ' เพื่อให้ตอบต่อ)");
             }
         } else {
-            // ตรวจจับลูป: เรียกเครื่องมือเดิมซ้ำๆ หรือเรียกตัวเดิมบ่อยเกินไป → หยุดและขอสรุป
-            let mut looped = false;
-            for tc in &calls {
-                let key = (tc.name.clone(), tc.arguments.clone());
-                if seen_calls.iter().any(|(n, a)| *n == key.0 && *a == key.1) {
-                    looped = true;
-                    break;
-                }
-                let count = name_counts.entry(tc.name.clone()).or_insert(0);
-                *count += 1;
-                if *count > 4 {
-                    looped = true;
-                    break;
-                }
-            }
-            if looped {
+            // หยุดเฉพาะลูปจริง: งานปกติอาจอ่านหรือแก้หลายไฟล์ด้วยเครื่องมือชนิดเดิม
+            if is_tool_loop(&calls, &seen_calls, &mut name_counts) {
                 append_skipped_tool_results(history, &structured_calls);
                 sink.note("[CommandBlock] AI วนลูปเรียกเครื่องมือเดิมบ่อยเกินไป — ขอสรุปผลล่าสุดแทน");
                 final_summary(agent, eff, history, last_tool_result.as_deref(), sink);
@@ -694,6 +706,22 @@ mod protocol_tests {
         assert_eq!(history[1]["role"], "tool");
         assert_eq!(history[1]["tool_call_id"], "one");
         assert_eq!(history[2]["tool_call_id"], "two");
+    }
+
+    #[test]
+    fn loop_guard_allows_a_useful_sequence_before_stopping_real_repetition() {
+        let mut seen = vec![
+            ("read_file".to_string(), json!({"path":"src/a.rs"})),
+            ("read_file".to_string(), json!({"path":"src/b.rs"})),
+        ];
+        let mut counts = std::collections::HashMap::from([("read_file".to_string(), 2usize)]);
+
+        assert!(!is_tool_loop(&[llm::ToolCall { id:"three".into(), name:"read_file".into(), arguments:json!({"path":"src/c.rs"}), extra:None }], &seen, &mut counts));
+        seen.extend([
+            ("read_file".to_string(), json!({"path":"src/c.rs"})),
+            ("read_file".to_string(), json!({"path":"src/c.rs"})),
+        ]);
+        assert!(is_tool_loop(&[llm::ToolCall { id:"six".into(), name:"read_file".into(), arguments:json!({"path":"src/c.rs"}), extra:None }], &seen, &mut counts));
     }
 }
 
