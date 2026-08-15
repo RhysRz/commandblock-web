@@ -5,11 +5,11 @@ const test = require('node:test');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'ui.html'), 'utf8');
 
-test('canonical UI renders an expandable work strip and a mobile status drawer', () => {
+test('canonical UI renders an expandable work strip and moves mobile status into the tool drawer', () => {
   assert.match(html, /className="workstrip"/);
-  assert.match(html, /id="mobileStatusToggle"/);
   assert.match(html, /id="mobileStatusDrawer"/);
   assert.match(html, /function renderWorkStrip\(bub\)/);
-  assert.match(html, /function setMobileStatusDrawer\(open\)/);
+  assert.match(html, /function syncMobileStatusPlacement\(\)/);
+  assert.match(html, /rightPane\.insertBefore\(mobileStatusDrawer,\s*rightPane\.firstChild\)/);
   assert.match(html, /\.workstrip summary/);
 });

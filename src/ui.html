@@ -331,13 +331,6 @@
     padding: 6px 4px;
     border-top: 1px solid var(--border);
   }
-  #mobileStatusToggle {
-    display: none; flex: 0 0 auto; width: 38px; height: 38px;
-    align-items: center; justify-content: center; border: 1px solid var(--border);
-    border-radius: 9px; background: var(--panel2); color: var(--text); cursor: pointer;
-    font: 19px/1 inherit;
-  }
-  #mobileStatusToggle:hover { border-color: var(--accent); }
   .statusbar .modelbtn {
     color: var(--text); background: var(--panel2); border: 1px solid var(--border);
     border-radius: 999px; padding: 3px 10px; font-size: 11.5px; max-width: 55%; overflow: hidden;
@@ -889,31 +882,36 @@
     display: none; position: fixed; inset: 0; z-index: 55;
     background: rgba(3, 5, 10, .55); backdrop-filter: blur(2px);
   }
-  body.mobpanel .mob-backdrop, body.mobhist .mob-backdrop, body.mobstatus .mob-backdrop { display: block; }
+  .mobile-fab, .mobile-fab-stack { display: none; }
+  body.mobmenu .mob-backdrop, body.mobhist .mob-backdrop { display: block; }
   @media (max-width: 900px) {
     /* ซ่อน panel คงที่ → กลายเป็น overlay เลื่อนจากขอบ */
     body, body.nohist { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
     body.nohist #histpane, body.nohist #rightpane { display: block; }
-    #iconrail {
-      grid-row: 2; grid-column: 1;
-      flex-direction: row; justify-content: space-around; align-items: center;
-      border-right: none; border-top: 1px solid var(--border);
-      padding: 6px 4px; height: 58px; overflow-x: auto;
+    #iconrail { display: none; }
+    .mobile-fab {
+      display: inline-flex; position: fixed; z-index: 70; width: 40px; height: 40px;
+      align-items: center; justify-content: center; border-radius: 50%;
+      border: 1px solid var(--glass-edge); color: var(--text); background: var(--glass);
+      box-shadow: 0 8px 26px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.12);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); font-size: 18px;
     }
-    #iconrail .irail-sep { display: none; }
+    #mobileHistoryToggle { top: 10px; left: 10px; }
+    .mobile-fab-stack { display: flex; position: fixed; z-index: 70; top: 10px; right: 10px; gap: 8px; flex-direction: column; }
+    .mobile-fab-stack .mobile-fab { position: static; }
     #chatpane { grid-row: 1; grid-column: 1; }
     #histpane {
-      position: fixed; top: 0; left: 0; bottom: 58px; width: min(86vw, 360px);
+      position: fixed; top: 0; left: 0; bottom: 0; width: min(86vw, 360px);
       z-index: 60; transform: translateX(-105%); transition: transform .28s ease;
       box-shadow: 0 0 40px rgba(0,0,0,.5); border-right: 1px solid var(--border);
     }
     body.mobhist #histpane { transform: translateX(0); }
     #rightpane {
-      position: fixed; top: 0; right: 0; bottom: 58px; width: min(94vw, 420px);
+      position: fixed; top: 0; right: 0; bottom: 0; width: min(94vw, 420px);
       z-index: 60; transform: translateX(105%); transition: transform .28s ease;
       box-shadow: 0 0 40px rgba(0,0,0,.5); border-left: 1px solid var(--border);
     }
-    body.mobpanel #rightpane { transform: translateX(0); }
+    body.mobmenu #rightpane { transform: translateX(0); }
     .mob-close {
       display: inline-flex; align-items: center; justify-content: center;
       margin-left: auto; background: none; border: none; color: var(--muted);
@@ -923,18 +921,14 @@
     .hist-head, .tabbar { display: flex; align-items: center; gap: 6px; }
     .tabbar { overflow-x: auto; }
     .tab { flex-shrink: 0; }
-    .chat-head { flex-wrap: wrap; gap: 8px; }
+    .chat-head { flex-wrap: wrap; gap: 8px; padding: 10px 58px; }
     .chat-title .sub { display: none; }
     .chat-title h1 { font-size: 15px; }
-    #mobileStatusToggle { display: inline-flex; }
     .statusbar {
-      position: fixed; z-index: 61; inset: 0 0 0 auto; width: min(88vw, 360px);
-      margin: 0; padding: 22px 16px; flex-direction: column; align-items: stretch; gap: 12px;
-      background: var(--panel); border: 1px solid var(--border); border-right: none;
-      box-shadow: -16px 0 38px rgba(0,0,0,.42); transform: translateX(105%);
-      transition: transform .28s ease; overflow-y: auto;
+      position: static; width: auto; margin: 0; padding: 14px 16px; flex-direction: column; align-items: stretch; gap: 12px;
+      background: rgba(255,255,255,.04); border: 0; border-bottom: 1px solid var(--glass-edge);
+      box-shadow: none; transform: none; transition: none; overflow: visible;
     }
-    body.mobstatus .statusbar { transform: translateX(0); }
     .statusbar .modelwrap, .statusbar .modelbtn, .statusbar .usagebar { width: 100%; }
     .statusbar .modelbtn { max-width: none; justify-content: space-between; }
     .statusbar .sp { display: none; }
@@ -945,8 +939,6 @@
     #chat { padding: 12px 10px 6px; }
     .msg .avatar { width: 30px; height: 30px; font-size: 13px; }
     textarea#input { font-size: 16px; } /* กัน iOS zoom เมื่อโฟกัส */
-    .irail-btn { width: 42px; height: 42px; }
-    .irail-btn svg { width: 21px; height: 21px; }
     #previewPill { display: none; } /* พื้นที่จำ — เปิดผ่านแท็บ Preview */
     #folderBtn { padding: 5px 10px; font-size: 12px; } /* เลือกโฟลเดอร์จากมือถือ (ผ่าน Desktop Connector) */
     .accchip { max-width: 150px; }
@@ -957,6 +949,11 @@
 <body>
 
 <div class="mob-backdrop" id="mobBackdrop"></div>
+<button id="mobileHistoryToggle" class="mobile-fab" type="button" aria-label="เปิดประวัติแชท" aria-controls="histpane" aria-expanded="false">☷</button>
+<div class="mobile-fab-stack" aria-label="เมนูมือถือ">
+  <button id="mobileMenuToggle" class="mobile-fab" type="button" aria-label="เปิดเมนูเครื่องมือ" aria-controls="rightpane" aria-expanded="false">☰</button>
+  <button id="mobileSettingsToggle" class="mobile-fab" type="button" aria-label="เปิดการตั้งค่า">⚙</button>
+</div>
 
 <!-- ================= AUTH SCREEN (Register / Login) ================= -->
 <div id="authScreen">
@@ -1047,7 +1044,6 @@
     <div class="inputbox">
       <button class="attach" id="attachBtn" title="แนบไฟล์ / วางรูป (Ctrl+V)">📎</button>
       <textarea id="input" rows="1" placeholder="Type a message — / for skills, @ for files (วางรูปได้ด้วย Ctrl+V)"></textarea>
-      <button id="mobileStatusToggle" type="button" aria-label="เปิดข้อมูลสถานะ" aria-controls="mobileStatusDrawer" aria-expanded="false">☰</button>
       <button id="send" title="ส่ง (Enter)">↵</button>
     </div>
     <div class="folderbar" id="folderBar" title="โฟลเดอร์ปัจจุบัน">
@@ -1089,7 +1085,7 @@
 <!-- ================= RIGHT: tabs ================= -->
 <section id="rightpane">
   <div class="tabbar">
-    <button class="mob-close" data-close="mobpanel" title="ปิดแผง">✕</button>
+    <button class="mob-close" data-close="mobmenu" title="ปิดแผง">✕</button>
     <button class="tab" data-tab="queue">Queue</button>
     <button class="tab" data-tab="files">Files</button>
     <button class="tab" data-tab="changes">Changes</button>
@@ -1870,7 +1866,7 @@ function switchTab(name){
   if(name==="preview") refreshPreview();
   if(name==="notes") loadNotes();
   /* มือถือ: เปิด panel เป็น overlay */
-  if (isMobileView()) document.body.classList.add("mobpanel");
+  if (isMobileView()) setMobileMenuDrawer(true);
 }
 document.querySelectorAll(".tab").forEach(t=>{
   t.addEventListener("click",()=>switchTab(t.dataset.tab));
@@ -1882,24 +1878,60 @@ document.querySelectorAll("#iconrail .irail-btn[data-tab]").forEach(b=>{
 /* เปิด/ปิด panel แบบ mobile overlay */
 const isMobileView = () => window.matchMedia("(max-width: 900px)").matches;
 document.querySelectorAll(".mob-close").forEach(b=>{
-  b.addEventListener("click",()=>document.body.classList.remove(b.dataset.close));
+  b.addEventListener("click",()=>{
+    if(b.dataset.close==="mobmenu") setMobileMenuDrawer(false);
+    else if(b.dataset.close==="mobhist") setMobileHistoryDrawer(false);
+    else document.body.classList.remove(b.dataset.close);
+  });
 });
-document.getElementById("mobBackdrop").addEventListener("click",()=>{
-  document.body.classList.remove("mobhist","mobpanel","mobstatus");
-  document.getElementById("mobileStatusToggle").setAttribute("aria-expanded","false");
-});
-const mobileStatusToggle = document.getElementById("mobileStatusToggle");
-function setMobileStatusDrawer(open){
-  document.body.classList.toggle("mobstatus", Boolean(open));
-  mobileStatusToggle.setAttribute("aria-expanded", String(Boolean(open)));
-  if(!open) mobileStatusToggle.focus();
+const rightPane = document.getElementById("rightpane");
+const histPane = document.getElementById("histpane");
+const mobileStatusDrawer = document.getElementById("mobileStatusDrawer");
+const statusHome = document.createComment("statusbar desktop home");
+mobileStatusDrawer.before(statusHome);
+const mobileMenuToggle = document.getElementById("mobileMenuToggle");
+const mobileHistoryToggle = document.getElementById("mobileHistoryToggle");
+const mobileSettingsToggle = document.getElementById("mobileSettingsToggle");
+function syncMobileStatusPlacement(){
+  if(isMobileView()) {
+    rightPane.insertBefore(mobileStatusDrawer, rightPane.firstChild);
+  } else {
+    statusHome.after(mobileStatusDrawer);
+    rightPane.style.transform = "";
+    histPane.style.transform = "";
+  }
 }
-mobileStatusToggle.addEventListener("click",()=>setMobileStatusDrawer(!document.body.classList.contains("mobstatus")));
-document.addEventListener("keydown",e=>{ if(e.key==="Escape" && document.body.classList.contains("mobstatus")) setMobileStatusDrawer(false); });
+function setMobileMenuDrawer(open){
+  const visible = Boolean(open);
+  document.body.classList.toggle("mobmenu", visible);
+  if(isMobileView()) rightPane.style.transform = visible ? "translateX(0)" : "translateX(105%)";
+  if(visible) setMobileHistoryDrawer(false);
+  mobileMenuToggle.setAttribute("aria-expanded", String(visible));
+}
+function setMobileHistoryDrawer(open){
+  const visible = Boolean(open);
+  document.body.classList.toggle("mobhist", visible);
+  if(isMobileView()) histPane.style.transform = visible ? "translateX(0)" : "translateX(-105%)";
+  if(visible) document.body.classList.remove("mobmenu");
+  mobileHistoryToggle.setAttribute("aria-expanded", String(visible));
+}
+syncMobileStatusPlacement();
+window.addEventListener("resize", syncMobileStatusPlacement);
+mobileMenuToggle.addEventListener("click",()=>setMobileMenuDrawer(!document.body.classList.contains("mobmenu")));
+mobileHistoryToggle.addEventListener("click",()=>setMobileHistoryDrawer(!document.body.classList.contains("mobhist")));
+mobileSettingsToggle.addEventListener("click", openSettings);
+document.getElementById("mobBackdrop").addEventListener("click",()=>{
+  setMobileMenuDrawer(false);
+  setMobileHistoryDrawer(false);
+});
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Escape") return;
+  setMobileMenuDrawer(false);
+  setMobileHistoryDrawer(false);
+});
 document.querySelector("#iconrail .irail-btn[data-act='toggle-hist']").addEventListener("click",()=>{
   if (isMobileView()) {
-    document.body.classList.toggle("mobhist");
-    document.body.classList.remove("mobpanel");
+    setMobileHistoryDrawer(!document.body.classList.contains("mobhist"));
   } else {
     document.body.classList.toggle("nohist");
   }
