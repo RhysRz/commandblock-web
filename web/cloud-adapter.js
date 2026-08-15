@@ -249,7 +249,6 @@
             recovery.saveRunState(sessionStorage, session.user.id, { conversationId: id, messages: resumable });
           };
           let totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-          let lastContent = '';
           let steps = 0;
           let needsResume = false;
           // eslint-disable-next-line no-constant-condition
@@ -264,7 +263,6 @@
             let data;
             try {
               data = await agentCall(apiKey, messages, (name, payload) => {
-                if (name === 'content') lastContent += payload.t || '';
                 push(name, payload);
               });
             } catch (error) {
@@ -277,8 +275,10 @@
             totalUsage.prompt_tokens += Number(usage.prompt_tokens || 0);
             totalUsage.completion_tokens += Number(usage.completion_tokens || 0);
             totalUsage.total_tokens += Number(usage.total_tokens || 0);
+            if (data.content.trim()) await saveMessage(session, 'assistant', data.content);
             const calls = data.tool_calls || [];
             if (!calls.length) break;
+            push('tools_begin', {});
             messages.push({ role: 'assistant', content: data.content || '', tool_calls: calls });
             persistRun();
             for (const call of calls) {
@@ -296,7 +296,6 @@
               persistRun();
             }
           }
-          if (lastContent) await saveMessage(session, 'assistant', lastContent);
           if (needsResume && recovery?.loadRunState(sessionStorage, session.user.id)) {
             push('resume', { t: 'งานยังไม่จบ แต่ checkpoint ถูกบันทึกแล้ว — กดทำต่อจากจุดที่บันทึกเพื่อไม่เริ่มงานซ้ำ' });
           } else {

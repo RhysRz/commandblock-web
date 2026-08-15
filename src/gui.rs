@@ -13,6 +13,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
 const UI_HTML: &str = include_str!("ui.html");
+const CHAT_TIMELINE_JS: &str = include_str!("../web/chat-timeline.js");
 const COMMAND_BLOCK_ICON_PNG: &[u8] = include_bytes!("../assets/buff-command-block.png");
 const SETTINGS_FILE: &str = ".freebuff/settings.json";
 const STARTUP_LOG_FILE: &str = ".freebuff/startup_log.json";
@@ -92,8 +93,8 @@ fn switch_account(agent: &ureq::Agent, shared: &Mutex<Shared>, account: Option<a
             Ok(Some((_conv_id, msgs))) if !msgs.is_empty() => {
                 let mut g = shared.lock().unwrap();
                 g.history = vec![json!({"role": "system", "content": crate::system_prompt()})];
-                for (role, content) in msgs {
-                    g.history.push(json!({"role": role, "content": content}));
+                for message in msgs {
+                    g.history.push(json!({"role": message.role, "content": message.content}));
                 }
                 g.plan = None;
                 g.rebuild_system();
@@ -461,8 +462,8 @@ pub fn serve(
                 eprintln!("[startup] pull OK conv={} msgs={}", cid, msgs.len());
                 if !msgs.is_empty() {
                     history = vec![json!({"role": "system", "content": crate::system_prompt()})];
-                    for (role, content) in msgs {
-                        history.push(json!({"role": role, "content": content}));
+                    for message in msgs {
+                        history.push(json!({"role": message.role, "content": message.content}));
                     }
                 }
             }
@@ -748,6 +749,12 @@ fn handle(
         ("GET", "/assets/buff-command-block.png") => {
             respond(&mut out, 200, "image/png", COMMAND_BLOCK_ICON_PNG)
         }
+        ("GET", "/assets/chat-timeline.js") => respond(
+            &mut out,
+            200,
+            "application/javascript; charset=utf-8",
+            CHAT_TIMELINE_JS.as_bytes(),
+        ),
         ("GET", "/favicon.ico") => respond(&mut out, 204, "text/plain", b""),
         ("GET", "/api/state") => {
             let g = shared.lock().unwrap();
@@ -999,7 +1006,7 @@ fn handle(
             Ok(Some((conversation_id, messages))) => {
                 let rows: Vec<Value> = messages
                     .into_iter()
-                    .map(|(role, content)| json!({"role": role, "content": content}))
+                    .map(|message| json!({"id": message.id, "role": message.role, "content": message.content, "created_at": message.created_at}))
                     .collect();
                 respond(
                     &mut out,

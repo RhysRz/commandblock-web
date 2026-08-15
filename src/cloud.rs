@@ -14,6 +14,14 @@ const SUPABASE_PUBLISHABLE_KEY: &str = "sb_publishable_UJMuyL3QY8lMEWJKZi3zAQ_NF
 /// meta file เก็บ conversation_id ของบัญชี (ต่อ user)
 const META_DIR: &str = ".freebuff/sessions";
 
+#[derive(Clone, Debug)]
+pub struct CloudMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+}
+
 fn meta_path(user_id: &str) -> String {
     format!("{META_DIR}/{user_id}.meta.json")
 }
@@ -91,9 +99,9 @@ fn cloud_messages(
     a: &ureq::Agent,
     pair: &auth::TokenPair,
     conv_id: &str,
-) -> Result<Vec<(String, String)>, String> {
+) -> Result<Vec<CloudMessage>, String> {
     let url = format!(
-        "{SUPABASE_URL}/rest/v1/messages?select=role,content,created_at&conversation_id=eq.{conv_id}&order=created_at.asc"
+        "{SUPABASE_URL}/rest/v1/messages?select=id,role,content,created_at&conversation_id=eq.{conv_id}&order=created_at.asc,id.asc"
     );
     let arr: Vec<Value> = authed(a.get(&url), &pair.access_token)
         .call()
@@ -103,16 +111,23 @@ fn cloud_messages(
     Ok(arr
         .into_iter()
         .filter_map(|m| {
+            let id = m.get("id").and_then(Value::as_str)?;
             let role = m.get("role").and_then(Value::as_str)?;
             let content = m.get("content").and_then(Value::as_str)?;
+            let created_at = m.get("created_at").and_then(Value::as_str).unwrap_or("");
             ((role == "user" || role == "assistant") && !content.trim().is_empty())
-                .then(|| (role.to_string(), content.to_string()))
+                .then(|| CloudMessage {
+                    id: id.to_string(),
+                    role: role.to_string(),
+                    content: content.to_string(),
+                    created_at: created_at.to_string(),
+                })
         })
         .collect())
 }
 
-/// ดึงประวัติแชทของบัญชีจากคลาวด์ (conversation ล่าสุด) → (conversation_id, [(role, content)])
-pub fn pull(agent: &ureq::Agent) -> Result<Option<(String, Vec<(String, String)>)>, String> {
+/// ดึงประวัติแชทของบัญชีจากคลาวด์ พร้อม ID/เวลาเพื่อเรียง UI ข้ามเครื่อง
+pub fn pull(agent: &ureq::Agent) -> Result<Option<(String, Vec<CloudMessage>)>, String> {
     let a = sync_agent();
     let pair = auth::refresh_token(agent)?;
     let Some(conv_id) = latest_conversation(&a, &pair)? else {
@@ -182,7 +197,7 @@ pub fn push(agent: &ureq::Agent, history: &[Value], model: &str) -> Result<(), S
     let remote = cloud_messages(&a, &pair, &conv_id)?;
     let rows: Vec<Value> = msgs
         .iter()
-        .filter(|message| !remote.contains(message))
+        .filter(|message| !remote.iter().any(|row| row.role == message.0 && row.content == message.1))
         .map(|(role, content)| {
             json!({
                 "conversation_id": conv_id,

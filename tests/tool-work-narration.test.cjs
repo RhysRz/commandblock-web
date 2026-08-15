@@ -7,9 +7,9 @@ const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
 const gui = fs.readFileSync(path.join(root, 'src', 'gui.rs'), 'utf8');
 
-test('tool narration is moved into the expandable work strip', () => {
+test('tool boundary preserves AI text while work strip remains a separate active area', () => {
   assert.match(gui, /fn tools_begin\(&mut self\)\s*\{[\s\S]*sse\(self\.out, "tools_begin", json!\(\{\}\)\)/);
-  assert.match(html, /function moveNarrationToWorkStrip\(bub, narration\)/);
-  assert.match(html, /ev==="tools_begin"/);
-  assert.match(html, /className="work-narration"/);
+  assert.match(html, /rememberConversationMessage\("assistant", acc, textSegment\.holder\)/);
+  assert.match(html, /const work=ensureWorkSegment\(\);/);
+  assert.doesNotMatch(html, /function moveNarrationToWorkStrip/);
 });

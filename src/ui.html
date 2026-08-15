@@ -1168,6 +1168,7 @@
   </div>
 </section>
 
+<script src="/assets/chat-timeline.js"></script>
 <script>
 "use strict";
 
@@ -1527,18 +1528,49 @@ function scrollBottom({force=false}={}){
   chat.scrollTop = chat.scrollHeight;
 }
 chat.addEventListener("scroll", ()=>{ followLiveOutput = isNearChatBottom(); });
-function addMsg(role, html, {forceScroll=false}={}){
+function addMsg(role, html, {forceScroll=false, conversationRow=null}={}){
   const div=document.createElement("div");
   div.className="msg "+role;
   div.innerHTML='<div class="avatar">'+(role==="user"?"🙋":"🤖")+'</div><div class="bubble">'+html+"</div>";
-  wrap.appendChild(div); scrollBottom({force:forceScroll}); return div;
+  if(conversationRow) stampConversationMessage(div, conversationRow);
+  else wrap.appendChild(div);
+  scrollBottom({force:forceScroll}); return div;
 }
 
 let conversationSyncTimer = null;
 const seenConversationRows = new Set();
-const pendingConversationRows = new Set();
+const pendingConversationRows = new Map();
+const chatTimeline = window.CommandBlockTimeline;
 function conversationTextKey(role, content){ return role+"\n"+String(content||""); }
-function rememberConversationMessage(role, content){ pendingConversationRows.add(conversationTextKey(role, content)); }
+function rowKey(row){ return chatTimeline.messageKey(row); }
+function rowFromMessageElement(el){
+  return { id: el.dataset.conversationId || "", created_at: el.dataset.conversationCreatedAt || "", role: el.dataset.conversationRole || "", content: el.dataset.conversationContent || "" };
+}
+function stampConversationMessage(el, row){
+  el.dataset.conversationKey = rowKey(row);
+  el.dataset.conversationId = row.id || "";
+  el.dataset.conversationCreatedAt = row.created_at || "";
+  el.dataset.conversationRole = row.role || "";
+  el.dataset.conversationContent = row.content || "";
+  const existing = [...wrap.querySelectorAll(".msg[data-conversation-key]")].filter(item => item !== el);
+  const index = chatTimeline.insertionIndex(existing.map(rowFromMessageElement), row);
+  const before = existing[index] || wrap.querySelector(".msg[data-active-work='true']");
+  if(before) wrap.insertBefore(el, before); else wrap.appendChild(el);
+}
+function rememberConversationMessage(role, content, el){
+  const key = conversationTextKey(role, content);
+  const pending = pendingConversationRows.get(key) || [];
+  if(el) pending.push(el);
+  pendingConversationRows.set(key, pending);
+}
+function takePendingConversationMessage(role, content){
+  const key = conversationTextKey(role, content);
+  const pending = pendingConversationRows.get(key);
+  if(!pending || !pending.length) return null;
+  const el = pending.shift();
+  if(!pending.length) pendingConversationRows.delete(key);
+  return el;
+}
 function stopConversationSync(){
   if(conversationSyncTimer){ clearInterval(conversationSyncTimer); conversationSyncTimer=null; }
   seenConversationRows.clear(); pendingConversationRows.clear();
@@ -1551,12 +1583,12 @@ async function syncConversationOnce(){
     const data = await res.json();
     for(const row of data.messages||[]){
       if(!row || !row.content || (row.role!=="user" && row.role!=="assistant")) continue;
-      const rowKey = row.id || [row.created_at||"",row.role,row.content].join("\n");
-      if(seenConversationRows.has(rowKey)) continue;
-      seenConversationRows.add(rowKey);
-      const textKey = conversationTextKey(row.role,row.content);
-      if(pendingConversationRows.delete(textKey)) continue;
-      addMsg(row.role, renderMarkdown(row.content));
+      const key = rowKey(row);
+      if(seenConversationRows.has(key)) continue;
+      seenConversationRows.add(key);
+      const local = takePendingConversationMessage(row.role, row.content);
+      if(local){ stampConversationMessage(local, row); continue; }
+      addMsg(row.role, renderMarkdown(row.content), {conversationRow: row});
     }
   }catch(_){}
 }
@@ -1597,7 +1629,6 @@ function toolHTML(name, argsStr){
 let turnChanges = new Map();
 let turnActivity = "";
 let todos = [];
-let workNarration = "";
 function setTodos(planText, bub){
   const lines = (planText||"").split("\n");
   const items = [];
@@ -1617,7 +1648,7 @@ function setTodos(planText, bub){
 function renderWorkStrip(bub){
   if(!bub) return;
   const files = [...turnChanges.values()];
-  if(!todos.length && !files.length && !turnActivity && !workNarration) return;
+  if(!todos.length && !files.length && !turnActivity) return;
   let box = bub.querySelector("details.workstrip");
   if(!box){
     box = document.createElement("details"); box.className="workstrip";
@@ -1632,18 +1663,6 @@ function renderWorkStrip(bub){
   const todoHtml = todos.length ? '<div class="tlist">'+todos.map(t=>'<div class="titem'+(t.done?" done":"")+'"><span class="tbox">'+(t.done?"✓":"")+'</span><span class="tt">'+esc(t.text)+"</span></div>").join("")+"</div>" : "";
   const filesHtml = files.length ? '<div class="work-files"><div class="work-files-head"><span>'+files.length+' files changed</span><span><span class="add">+'+totA+'</span><span class="del">-'+totD+'</span></span></div>'+files.map(f=>'<div class="work-file"><span class="st '+esc(f.status)+'">'+esc(f.status)+'</span><span class="path">'+esc(f.path)+'</span><span><span class="add">+'+f.added+'</span><span class="del">-'+f.deleted+'</span></span></div>').join("")+"</div>" : "";
   box.innerHTML = '<summary><span class="tdot"></span><span class="wtitle">'+esc(title)+'</span><span class="tcnt">'+progress+(progress&&delta?" · ":"")+delta+'</span><span class="wtri">▶</span></summary>'+todoHtml+filesHtml;
-  if(workNarration){
-    const narration = document.createElement("details"); narration.className="work-narration";
-    narration.innerHTML = '<summary>ข้อความระหว่างทำงาน</summary><div>'+esc(workNarration)+"</div>";
-    box.appendChild(narration);
-  }
-}
-function moveNarrationToWorkStrip(bub, narration){
-  workNarration = String(narration||"").trim();
-  if(!workNarration) return;
-  renderWorkStrip(bub);
-  const text = bub.querySelector(".txt");
-  if(text) text.innerHTML = "";
 }
 function checkNextTodo(){
   const next = todos.find(t=>!t.done);
@@ -1773,27 +1792,46 @@ async function send(){
   attachments = []; renderAttachBar();
   const userHtml = esc(text || (sentAtts.length? "(ส่งไฟล์/รูป)" : "")) +
     (sentAtts.length ? '<div class="atts">'+sentAtts.map(a=>a.kind==="image" ? '<img src="'+a.thumb+'" class="attimg">' : '<span class="attmini">📄 '+esc(a.name)+'</span>').join("")+'</div>' : "");
-  addMsg("user",userHtml,{forceScroll:true});
-  rememberConversationMessage("user", msgText);
+  const userMessage=addMsg("user",userHtml,{forceScroll:true});
+  rememberConversationMessage("user", msgText, userMessage);
   addToHistory(text || "(ไฟล์แนบ)");
-  turnChanges = new Map(); turnActivity = ""; todos = []; workNarration = "";
+  turnChanges = new Map(); turnActivity = ""; todos = [];
   setBusy(true);    const thinking=addMsg("assistant",'<span class="note">กำลังคิด…</span>');
-    let bub=null;
+    let textSegment=null;
+    let workSegment=null;
+    const liveTurn=chatTimeline.createLiveTurn();
+    function createAssistantSegment(activeWork=false){
+      const holder=document.createElement("div"); holder.className="msg assistant";
+      if(activeWork) holder.dataset.activeWork="true";
+      holder.innerHTML='<div class="avatar">🤖</div><div class="bubble"></div>';
+      const activeWorkHolder=wrap.querySelector(".msg[data-active-work='true']");
+      if(activeWork) wrap.appendChild(holder);
+      else if(activeWorkHolder) wrap.insertBefore(holder, activeWorkHolder);
+      else if(thinking.isConnected) wrap.insertBefore(holder,thinking.nextSibling);
+      else wrap.appendChild(holder);
+      const bubble=holder.querySelector(".bubble");
+      const txt=document.createElement("div"); txt.className="txt"; bubble.appendChild(txt);
+      const cursor=document.createElement("span"); cursor.className="cursor"; bubble.appendChild(cursor);
+      return {holder,bubble,txt,cursor};
+    }
+    function ensureTextSegment(){
+      if(!textSegment){ textSegment=createAssistantSegment(false); lastBub=textSegment.bubble; }
+      return textSegment;
+    }
+    function ensureWorkSegment(){
+      if(!workSegment){ workSegment=createAssistantSegment(true); lastBub=workSegment.bubble; }
+      return workSegment;
+    }
     try{
       const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         message: msgText,
         images: images.map(i=>({mime:i.mime, data:i.data}))
       })});
       if(!res.ok) throw new Error("HTTP "+res.status);
-      // สร้าง bubble แยกโซน: ข้อความ (txt) + การ์ดเครื่องมือ (ต่อท้าย ก่อน cursor)
-      const holder=document.createElement("div"); holder.className="msg assistant";
-      holder.innerHTML='<div class="avatar">🤖</div><div class="bubble"></div>';
-      wrap.insertBefore(holder,thinking.nextSibling);
-      bub=holder.querySelector(".bubble");
-      lastBub = bub;
-      const txt=document.createElement("div"); txt.className="txt"; bub.appendChild(txt);
-      const cur=document.createElement("span"); cur.className="cursor"; bub.appendChild(cur);
-      thinking.remove(); scrollBottom();
+      // ข้อความ AI แต่ละช่วงเป็นบับเบิลแยก ส่วน Work Strip ทำงานอยู่ล่างสุด
+      thinking.remove();
+      textSegment=ensureTextSegment();
+      scrollBottom();
       let acc="";
       let thinkingText="";
       const reader=res.body.getReader(); const dec=new TextDecoder(); let buf="";
@@ -1805,23 +1843,37 @@ async function send(){
         while((idx=buf.indexOf("\n\n"))>=0){
           const frame=buf.slice(0,idx); buf=buf.slice(idx+2);
           parseFrame(frame,(ev,obj)=>{
-            if(ev==="content"&&obj&&obj.t){ acc+=obj.t; txt.innerHTML=renderMarkdown(acc); scrollBottom(); }
+            if(ev==="content"&&obj&&obj.t){
+              const segment=ensureTextSegment();
+              acc+=obj.t; liveTurn.appendText(obj.t); segment.txt.innerHTML=renderMarkdown(acc); scrollBottom();
+            }
             else if(ev==="think"&&obj&&obj.t){
               thinkingText += obj.t;
-              scheduleThinkingRender(bub, thinkingText);
+              scheduleThinkingRender((workSegment||ensureTextSegment()).bubble, thinkingText);
             }
             else if(ev==="tools_begin"){
-              moveNarrationToWorkStrip(bub, acc);
+              flushThinkingRender();
+              const oldThinking=textSegment&&textSegment.bubble.querySelector("details.think");
+              if(oldThinking) oldThinking.remove();
+              liveTurn.beginTools();
+              if(acc.trim() && textSegment){
+                rememberConversationMessage("assistant", acc, textSegment.holder);
+                textSegment.cursor.remove();
+              } else if(textSegment){ textSegment.holder.remove(); }
               acc = "";
+              textSegment=null;
+              const work=ensureWorkSegment();
+              if(oldThinking) work.bubble.insertBefore(oldThinking, work.cursor);
             }
             else if(ev==="tool"&&obj){
+              const work=ensureWorkSegment();
               turnActivity = toolLabel(obj.name,obj.args);
-              if(obj.name==="update_plan"){ try{ const a=JSON.parse(obj.args); setTodos(a.plan||"", bub); }catch(e){ renderWorkStrip(bub); } }
-              else { checkNextTodo(); renderWorkStrip(bub); }
+              if(obj.name==="update_plan"){ try{ const a=JSON.parse(obj.args); setTodos(a.plan||"", work.bubble); }catch(e){ renderWorkStrip(work.bubble); } }
+              else { checkNextTodo(); renderWorkStrip(work.bubble); }
               scrollBottom();
             }
             else if(ev==="change"&&obj&&obj.path){
-              recordTurnChange(obj, bub); scrollBottom();
+              recordTurnChange(obj, ensureWorkSegment().bubble); scrollBottom();
             }
             else if(ev === "usage" && obj){ recordUsage(obj); }
             else if(ev === "resume" && obj && obj.t){
@@ -1830,20 +1882,24 @@ async function send(){
               button.textContent="▶ ทำต่อจากจุดที่บันทึก";
               button.onclick=()=>{ input.value="ทำต่อจากจุดที่บันทึกไว้"; autoGrow(); send(); };
               card.append(document.createTextNode(obj.t+" "),button);
-              cur.insertAdjacentElement("beforebegin",card); scrollBottom();
+              (workSegment||ensureTextSegment()).cursor.insertAdjacentElement("beforebegin",card); scrollBottom();
             }
-            else if(ev==="note"&&obj&&obj.t){ cur.insertAdjacentHTML("beforebegin",'<div class="note">'+esc(obj.t)+"</div>"); scrollBottom(); }
+            else if(ev==="note"&&obj&&obj.t){ (workSegment||ensureTextSegment()).cursor.insertAdjacentHTML("beforebegin",'<div class="note">'+esc(obj.t)+"</div>"); scrollBottom(); }
           });
         }
       }
       flushThinkingRender();
-      if(acc) { txt.innerHTML=renderMarkdown(acc); rememberConversationMessage("assistant", acc); }
-      else if(!bub.querySelector(".note")&&!bub.querySelector(".changebox")&&!bub.querySelector(".changecard")&&!bub.querySelector(".workstrip")) txt.innerHTML='<span class="err">(ไม่มีคำตอบจาก AI)</span>';
-      cur.remove();
+      if(acc) {
+        const segment=ensureTextSegment();
+        segment.txt.innerHTML=renderMarkdown(acc); rememberConversationMessage("assistant", acc, segment.holder); liveTurn.finishText();
+      }
+      else if(!textSegment&&!workSegment) ensureTextSegment().txt.innerHTML='<span class="err">(ไม่มีคำตอบจาก AI)</span>';
+      if(textSegment) textSegment.cursor.remove();
+      if(workSegment){ workSegment.cursor.remove(); delete workSegment.holder.dataset.activeWork; }
       scrollBottom();
       loadQueue();
     }catch(e){
-      const target = bub || thinking;
+      const target = (textSegment||workSegment)?.bubble || thinking;
       target.innerHTML='<div class="txt"><span class="err">เกิดข้อผิดพลาด: '+esc(String(e))+"</span></div>"; scrollBottom();
     }finally{ flushThinkingRender(); setBusy(false); input.focus(); }
 }

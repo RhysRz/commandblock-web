@@ -6,10 +6,12 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sourcePath = resolve(root, 'src/ui.html');
 const adapterPath = resolve(root, 'web/cloud-adapter.js');
 const recoveryPath = resolve(root, 'web/chat-recovery.js');
+const timelinePath = resolve(root, 'web/chat-timeline.js');
 const sitePath = resolve(root, 'site');
 
 if (!existsSync(adapterPath)) throw new Error('Missing web/cloud-adapter.js');
 if (!existsSync(recoveryPath)) throw new Error('Missing web/chat-recovery.js');
+if (!existsSync(timelinePath)) throw new Error('Missing web/chat-timeline.js');
 
 rmSync(sitePath, { recursive: true, force: true });
 mkdirSync(sitePath, { recursive: true });
@@ -33,3 +35,5 @@ copyFileSync(adapterPath, resolve(sitePath, 'cloud-adapter.js'));
 copyFileSync(recoveryPath, resolve(sitePath, 'chat-recovery.js'));
 copyFileSync(resolve(root, 'web/manifest.webmanifest'), resolve(sitePath, 'manifest.webmanifest'));
 if (existsSync(resolve(root, 'assets'))) cpSync(resolve(root, 'assets'), resolve(sitePath, 'assets'), { recursive: true });
+mkdirSync(resolve(sitePath, 'assets'), { recursive: true });
+copyFileSync(timelinePath, resolve(sitePath, 'assets', 'chat-timeline.js'));
