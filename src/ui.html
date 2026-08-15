@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>CommandBlock — ผู้ช่วยพัฒนาโค้ด AI</title>
 <style>
   :root {
@@ -887,7 +887,7 @@
   body.mobmenu .mob-backdrop, body.mobhist .mob-backdrop { display: block; }
   @media (max-width: 900px) {
     /* ซ่อน panel คงที่ → กลายเป็น overlay เลื่อนจากขอบ */
-    :root { --mobile-top-clearance: calc(env(safe-area-inset-top, 0px) + 54px); }
+    :root { --mobile-top-clearance: calc(env(safe-area-inset-top, 0px) + 42px); }
     body, body.nohist { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
     body.nohist #histpane, body.nohist #rightpane { display: block; }
     #iconrail { display: none; }
