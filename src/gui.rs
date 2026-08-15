@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 
 const UI_HTML: &str = include_str!("ui.html");
 const CHAT_TIMELINE_JS: &str = include_str!("../web/chat-timeline.js");
+const SESSION_STORE_JS: &str = include_str!("../web/session-store.js");
 const COMMAND_BLOCK_ICON_PNG: &[u8] = include_bytes!("../assets/buff-command-block.png");
 const SETTINGS_FILE: &str = ".freebuff/settings.json";
 const STARTUP_LOG_FILE: &str = ".freebuff/startup_log.json";
@@ -35,6 +36,7 @@ struct Shared {
     folder_name: String,          // ชื่อโฟลเดอร์ปัจจุบัน (แสดงใต้ช่องส่ง) — เริ่มจากโฟลเดอร์โปรเจกต์
     folder_path: String,          // พาธเต็มของโฟลเดอร์ปัจจุบัน
     account: Option<auth::Account>, // บัญชีที่ล็อกอิน (เก็บข้อมูลต่อบัญชี — ประวัติแชท/โน้ต)
+    conversation_id: Option<String>, // SESSION ที่กำลังทำงานอยู่ (ข้อมูลคลาวด์เดียวกับเว็บ)
 }
 
 impl Shared {
@@ -84,18 +86,20 @@ fn switch_account(agent: &ureq::Agent, shared: &Mutex<Shared>, account: Option<a
     let mut g = shared.lock().unwrap();
     crate::save_session_at(&session_path_for(&g.account), &g.history);
     g.account = account;
+    g.conversation_id = None;
     let mut history = vec![json!({"role": "system", "content": crate::system_prompt()})];
     history.extend(crate::load_session_at(&session_path_for(&g.account)));
     if g.account.is_some() {
         drop(g);
         // ดึงประวัติคลาวด์ของบัญชีนี้ (ถ้าเคยซิงก์ไว้) — คลาวด์เป็นแหล่งล่าสุด
         match cloud::pull(agent) {
-            Ok(Some((_conv_id, msgs))) if !msgs.is_empty() => {
+            Ok(Some((conv_id, msgs))) if !msgs.is_empty() => {
                 let mut g = shared.lock().unwrap();
                 g.history = vec![json!({"role": "system", "content": crate::system_prompt()})];
                 for message in msgs {
                     g.history.push(json!({"role": message.role, "content": message.content}));
                 }
+                g.conversation_id = Some(conv_id);
                 g.plan = None;
                 g.rebuild_system();
             }
@@ -453,6 +457,7 @@ pub fn serve(
     // บัญชีที่ล็อกอินไว้ (จาก keyring) — ถ้ามี ให้โหลดประวัติของบัญชีนั้น (แยกไฟล์ต่อบัญชี)
     let account = auth::restore().ok().flatten();
     let mut history = vec![json!({"role": "system", "content": crate::system_prompt()})];
+    let mut conversation_id = None;
     history.extend(crate::load_session_at(&session_path_for(&account)));
     // ถ้ามีบัญชี → ดึงประวัติล่าสุดจากคลาวด์ (ซิงก์ข้ามเครื่อง — คลาวด์เป็นแหล่งล่าสุด)
     if let Some(a) = &account {
@@ -460,6 +465,7 @@ pub fn serve(
         match cloud::pull(&agent) {
             Ok(Some((cid, msgs))) => {
                 eprintln!("[startup] pull OK conv={} msgs={}", cid, msgs.len());
+                conversation_id = Some(cid);
                 if !msgs.is_empty() {
                     history = vec![json!({"role": "system", "content": crate::system_prompt()})];
                     for message in msgs {
@@ -499,6 +505,7 @@ pub fn serve(
         folder_name: cwd_name,
         folder_path: cwd_path,
         account,
+        conversation_id,
     }));
     // ใส่ทักษะที่ตั้งไว้ (preloaded) + บริบทโฟลเดอร์ลงใน system prompt ตั้งแต่เริ่ม
     shared.lock().unwrap().rebuild_system();
@@ -681,6 +688,14 @@ fn bind_free() -> (TcpListener, u16) {
 
 // ---------- HTTP handler ----------
 
+fn query_value(path_q: &str, name: &str) -> Option<String> {
+    let (_, query) = path_q.split_once('?')?;
+    query.split('&').find_map(|part| {
+        let (key, value) = part.split_once('=')?;
+        (key == name).then(|| value.to_string())
+    })
+}
+
 fn handle(
     mut stream: TcpStream,
     agent: &ureq::Agent,
@@ -754,6 +769,12 @@ fn handle(
             200,
             "application/javascript; charset=utf-8",
             CHAT_TIMELINE_JS.as_bytes(),
+        ),
+        ("GET", "/assets/session-store.js") => respond(
+            &mut out,
+            200,
+            "application/javascript; charset=utf-8",
+            SESSION_STORE_JS.as_bytes(),
         ),
         ("GET", "/favicon.ico") => respond(&mut out, 204, "text/plain", b""),
         ("GET", "/api/state") => {
@@ -1002,12 +1023,66 @@ fn handle(
                 json!({ "activity": activity }).to_string().as_bytes(),
             );
         }
-        ("GET", "/api/conversation/sync") => match cloud::pull(agent) {
+        ("GET", "/api/conversations") => match cloud::list_conversations(agent) {
+            Ok(conversations) => {
+                let active = shared.lock().unwrap().conversation_id.clone();
+                let rows: Vec<Value> = conversations.into_iter().map(|row| json!({
+                    "id": row.id, "title": row.title, "model_id": row.model_id,
+                    "created_at": row.created_at, "updated_at": row.updated_at
+                })).collect();
+                respond(&mut out, 200, "application/json", json!({"conversations": rows, "conversation_id": active}).to_string().as_bytes());
+            }
+            Err(error) => respond(&mut out, 401, "application/json", json!({"error": error}).to_string().as_bytes()),
+        },
+        ("POST", "/api/conversations") => {
+            let model = shared.lock().unwrap().model.clone();
+            match cloud::create_conversation(agent, &model) {
+                Ok(row) => {
+                    let mut g = shared.lock().unwrap();
+                    g.conversation_id = Some(row.id.clone());
+                    g.history = vec![json!({"role": "system", "content": crate::system_prompt()})];
+                    g.plan = None;
+                    g.rebuild_system();
+                    respond(&mut out, 200, "application/json", json!({"conversation": {
+                        "id": row.id, "title": row.title, "model_id": row.model_id,
+                        "created_at": row.created_at, "updated_at": row.updated_at
+                    }}).to_string().as_bytes());
+                }
+                Err(error) => respond(&mut out, 400, "application/json", json!({"error": error}).to_string().as_bytes()),
+            }
+        }
+        ("POST", _) if path.starts_with("/api/messages/") && path.ends_with("/pin") => {
+            let message_id = path.trim_start_matches("/api/messages/").trim_end_matches("/pin").trim_matches('/');
+            let is_pinned = serde_json::from_str::<Value>(&body_str).ok()
+                .and_then(|value| value.get("is_pinned").and_then(Value::as_bool)).unwrap_or(false);
+            match cloud::set_message_pin(agent, message_id, is_pinned) {
+                Ok(value) => respond(&mut out, 200, "application/json", json!({"message": {"id": message_id, "is_pinned": value}}).to_string().as_bytes()),
+                Err(error) => respond(&mut out, 400, "application/json", json!({"error": error}).to_string().as_bytes()),
+            }
+        }
+        ("GET", "/api/conversation/sync") => {
+            let requested = query_value(path_q, "conversation_id");
+            let result = match requested.as_deref() {
+                Some(id) => cloud::pull_conversation(agent, id).map(|messages| Some((id.to_string(), messages))),
+                None => cloud::pull(agent),
+            };
+            match result {
             Ok(Some((conversation_id, messages))) => {
                 let rows: Vec<Value> = messages
-                    .into_iter()
-                    .map(|message| json!({"id": message.id, "role": message.role, "content": message.content, "created_at": message.created_at}))
+                    .iter()
+                    .map(|message| json!({"id": message.id, "role": message.role, "content": message.content, "created_at": message.created_at, "is_pinned": message.is_pinned}))
                     .collect();
+                {
+                    let mut g = shared.lock().unwrap();
+                    g.conversation_id = Some(conversation_id.clone());
+                    g.history = vec![json!({"role": "system", "content": crate::system_prompt()})];
+                    for message in &messages {
+                        g.history.push(json!({"role": message.role, "content": message.content}));
+                    }
+                    g.plan = None;
+                    g.rebuild_system();
+                    crate::save_session_at(&session_path_for(&g.account), &g.history);
+                }
                 respond(
                     &mut out,
                     200,
@@ -1024,6 +1099,7 @@ fn handle(
                 "application/json",
                 json!({"error": error}).to_string().as_bytes(),
             ),
+        }
         },
         ("GET", "/api/notes") => {
             let path = notes_path_for(&shared.lock().unwrap().account);
@@ -1394,13 +1470,16 @@ fn handle_chat(
     crate::save_session_at(&session_path_for(&g.account), &g.history);
     let sync_history = g.history.clone();
     let sync_model = g.model.clone();
+    let sync_conversation = g.conversation_id.clone();
     let logged_in = g.account.is_some();
     drop(g);
     let _ = sse(out, "done", json!({"ok": true}));
     let _ = out.flush();
     // ซิงก์ประวัติแชทขึ้นคลาวด์ (ต่อบัญชี — ใช้ข้ามเครื่องได้)
     if logged_in {
-        let _ = cloud::push(agent, &sync_history, &sync_model);
+        if let Ok(conversation_id) = cloud::push(agent, &sync_history, &sync_model, sync_conversation.as_deref()) {
+            shared.lock().unwrap().conversation_id = Some(conversation_id);
+        }
     }
 }
 

@@ -20,6 +20,16 @@ pub struct CloudMessage {
     pub role: String,
     pub content: String,
     pub created_at: String,
+    pub is_pinned: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct CloudConversation {
+    pub id: String,
+    pub title: String,
+    pub model_id: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 fn meta_path(user_id: &str) -> String {
@@ -77,10 +87,9 @@ fn text_messages(history: &[Value]) -> Vec<(String, String)> {
     out
 }
 
-/// ใช้ conversation ล่าสุดของบัญชีเป็นแหล่งจริง ไม่ยึด meta ของเครื่องหนึ่งเครื่องใด
-fn latest_conversation(a: &ureq::Agent, pair: &auth::TokenPair) -> Result<Option<String>, String> {
+fn conversations(a: &ureq::Agent, pair: &auth::TokenPair) -> Result<Vec<CloudConversation>, String> {
     let url = format!(
-        "{SUPABASE_URL}/rest/v1/conversations?select=id&user_id=eq.{}&order=updated_at.desc&limit=1",
+        "{SUPABASE_URL}/rest/v1/conversations?select=id,title,model_id,created_at,updated_at&user_id=eq.{}&order=updated_at.desc,id.desc",
         pair.user_id
     );
     let rows: Vec<Value> = authed(a.get(&url), &pair.access_token)
@@ -89,10 +98,59 @@ fn latest_conversation(a: &ureq::Agent, pair: &auth::TokenPair) -> Result<Option
         .into_json()
         .map_err(|_| "อ่านรายการสนทนาคลาวด์ไม่สำเร็จ".to_string())?;
     Ok(rows
-        .first()
-        .and_then(|row| row.get("id"))
-        .and_then(Value::as_str)
-        .map(str::to_string))
+        .into_iter()
+        .filter_map(|row| Some(CloudConversation {
+            id: row.get("id")?.as_str()?.to_string(),
+            title: row.get("title").and_then(Value::as_str).unwrap_or("แชทใหม่").to_string(),
+            model_id: row.get("model_id").and_then(Value::as_str).unwrap_or_default().to_string(),
+            created_at: row.get("created_at").and_then(Value::as_str).unwrap_or_default().to_string(),
+            updated_at: row.get("updated_at").and_then(Value::as_str).unwrap_or_default().to_string(),
+        }))
+        .collect())
+}
+
+fn now_rfc3339() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default()
+}
+
+/// ใช้ conversation ล่าสุดของบัญชีเป็นค่าเริ่มต้นเท่านั้น; หลังเลือก Session แล้ว GUI จะส่ง id ชัดเจน
+fn latest_conversation(a: &ureq::Agent, pair: &auth::TokenPair) -> Result<Option<String>, String> {
+    Ok(conversations(a, pair)?.first().map(|row| row.id.clone()))
+}
+
+pub fn list_conversations(agent: &ureq::Agent) -> Result<Vec<CloudConversation>, String> {
+    let pair = auth::refresh_token(agent)?;
+    conversations(&sync_agent(), &pair)
+}
+
+pub fn create_conversation(agent: &ureq::Agent, model: &str) -> Result<CloudConversation, String> {
+    let pair = auth::refresh_token(agent)?;
+    let a = sync_agent();
+    let url = format!("{SUPABASE_URL}/rest/v1/conversations");
+    let rows: Vec<Value> = authed(
+        a.post(&url).set("Prefer", "return=representation"),
+        &pair.access_token,
+    )
+    .send_json(json!({
+        "user_id": pair.user_id,
+        "title": "แชทใหม่",
+        "model_id": model,
+    }))
+    .map_err(|_| "สร้าง SESSION ไม่สำเร็จ".to_string())?
+    .into_json()
+    .map_err(|_| "อ่าน SESSION ใหม่ไม่สำเร็จ".to_string())?;
+    let row = rows.first().ok_or_else(|| "อ่าน SESSION ใหม่ไม่สำเร็จ".to_string())?;
+    let conversation = CloudConversation {
+        id: row.get("id").and_then(Value::as_str).ok_or_else(|| "อ่าน SESSION ใหม่ไม่สำเร็จ".to_string())?.to_string(),
+        title: row.get("title").and_then(Value::as_str).unwrap_or("แชทใหม่").to_string(),
+        model_id: row.get("model_id").and_then(Value::as_str).unwrap_or(model).to_string(),
+        created_at: row.get("created_at").and_then(Value::as_str).unwrap_or_default().to_string(),
+        updated_at: row.get("updated_at").and_then(Value::as_str).unwrap_or_default().to_string(),
+    };
+    save_conv_id(&pair.user_id, &conversation.id);
+    Ok(conversation)
 }
 
 fn cloud_messages(
@@ -101,7 +159,8 @@ fn cloud_messages(
     conv_id: &str,
 ) -> Result<Vec<CloudMessage>, String> {
     let url = format!(
-        "{SUPABASE_URL}/rest/v1/messages?select=id,role,content,created_at&conversation_id=eq.{conv_id}&order=created_at.asc,id.asc"
+        "{SUPABASE_URL}/rest/v1/messages?select=id,role,content,created_at,is_pinned&conversation_id=eq.{conv_id}&user_id=eq.{}&order=created_at.asc,id.asc",
+        pair.user_id
     );
     let arr: Vec<Value> = authed(a.get(&url), &pair.access_token)
         .call()
@@ -115,12 +174,14 @@ fn cloud_messages(
             let role = m.get("role").and_then(Value::as_str)?;
             let content = m.get("content").and_then(Value::as_str)?;
             let created_at = m.get("created_at").and_then(Value::as_str).unwrap_or("");
+            let is_pinned = m.get("is_pinned").and_then(Value::as_bool).unwrap_or(false);
             ((role == "user" || role == "assistant") && !content.trim().is_empty())
                 .then(|| CloudMessage {
                     id: id.to_string(),
                     role: role.to_string(),
                     content: content.to_string(),
                     created_at: created_at.to_string(),
+                    is_pinned,
                 })
         })
         .collect())
@@ -138,6 +199,49 @@ pub fn pull(agent: &ureq::Agent) -> Result<Option<(String, Vec<CloudMessage>)>, 
         conv_id.clone(),
         cloud_messages(&a, &pair, &conv_id)?,
     )))
+}
+
+pub fn pull_conversation(agent: &ureq::Agent, conv_id: &str) -> Result<Vec<CloudMessage>, String> {
+    if conv_id.is_empty() || !conv_id.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-') {
+        return Err("รหัส SESSION ไม่ถูกต้อง".to_string());
+    }
+    let pair = auth::refresh_token(agent)?;
+    let a = sync_agent();
+    let url = format!(
+        "{SUPABASE_URL}/rest/v1/conversations?select=id&id=eq.{conv_id}&user_id=eq.{}&limit=1",
+        pair.user_id
+    );
+    let rows: Vec<Value> = authed(a.get(&url), &pair.access_token)
+        .call()
+        .map_err(|_| "ตรวจสอบ SESSION ไม่สำเร็จ".to_string())?
+        .into_json()
+        .map_err(|_| "อ่าน SESSION ไม่สำเร็จ".to_string())?;
+    if rows.is_empty() {
+        return Err("ไม่พบ SESSION นี้".to_string());
+    }
+    save_conv_id(&pair.user_id, conv_id);
+    cloud_messages(&a, &pair, conv_id)
+}
+
+pub fn set_message_pin(agent: &ureq::Agent, message_id: &str, is_pinned: bool) -> Result<bool, String> {
+    if message_id.is_empty() || !message_id.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-') {
+        return Err("รหัสข้อความไม่ถูกต้อง".to_string());
+    }
+    let pair = auth::refresh_token(agent)?;
+    let a = sync_agent();
+    let url = format!("{SUPABASE_URL}/rest/v1/messages?id=eq.{message_id}&user_id=eq.{}", pair.user_id);
+    let rows: Vec<Value> = authed(
+        a.patch(&url).set("Prefer", "return=representation"),
+        &pair.access_token,
+    )
+    .send_json(json!({"is_pinned": is_pinned}))
+    .map_err(|_| "บันทึกการปักหมุดไม่สำเร็จ".to_string())?
+    .into_json()
+    .map_err(|_| "อ่านผลการปักหมุดไม่สำเร็จ".to_string())?;
+    if rows.is_empty() {
+        return Err("ไม่พบข้อความนี้".to_string());
+    }
+    Ok(is_pinned)
 }
 
 /// หา conversation ที่เคยซิงก์ หรือสร้างใหม่ → คืน conversation_id
@@ -186,14 +290,17 @@ fn ensure_conversation(
 }
 
 /// เติมเฉพาะข้อความที่ยังไม่มีบนคลาวด์ เพื่อไม่ลบงานที่เพิ่งส่งจากอีกเครื่อง
-pub fn push(agent: &ureq::Agent, history: &[Value], model: &str) -> Result<(), String> {
+pub fn push(agent: &ureq::Agent, history: &[Value], model: &str, selected_conversation: Option<&str>) -> Result<String, String> {
     let msgs = text_messages(history);
     if msgs.is_empty() {
-        return Ok(());
+        return Ok(selected_conversation.unwrap_or_default().to_string());
     }
     let a = sync_agent();
     let pair = auth::refresh_token(agent)?;
-    let conv_id = ensure_conversation(agent, &pair, model, &msgs[0].1)?;
+    let conv_id = selected_conversation
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .unwrap_or(ensure_conversation(agent, &pair, model, &msgs[0].1)?);
     let remote = cloud_messages(&a, &pair, &conv_id)?;
     let rows: Vec<Value> = msgs
         .iter()
@@ -208,7 +315,7 @@ pub fn push(agent: &ureq::Agent, history: &[Value], model: &str) -> Result<(), S
         })
         .collect();
     if rows.is_empty() {
-        return Ok(());
+        return Ok(conv_id);
     }
     let url = format!("{SUPABASE_URL}/rest/v1/messages");
     match authed(
@@ -217,7 +324,13 @@ pub fn push(agent: &ureq::Agent, history: &[Value], model: &str) -> Result<(), S
     )
     .send_json(json!(rows))
     {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            let conversation_url = format!("{SUPABASE_URL}/rest/v1/conversations?id=eq.{conv_id}&user_id=eq.{}", pair.user_id);
+            let _ = authed(a.patch(&conversation_url), &pair.access_token)
+                .send_json(json!({"updated_at": now_rfc3339()}));
+            save_conv_id(&pair.user_id, &conv_id);
+            Ok(conv_id)
+        },
         Err(e) => {
             eprintln!("[cloud] push messages ล้มเหลว: {e}");
             Err("บันทึกประวัติคลาวด์ไม่สำเร็จ".to_string())
