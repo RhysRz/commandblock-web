@@ -17,3 +17,11 @@ test('chat pane can shrink so long conversations scroll inside the viewport', ()
   assert.match(chat, /min-height:\s*0/);
   assert.match(chat, /overflow-y:\s*auto/);
 });
+
+test('streaming output follows only a reader already near the bottom', () => {
+  assert.match(html, /const AUTO_SCROLL_BOTTOM_GAP\s*=\s*96/);
+  assert.match(html, /function isNearChatBottom\(\)/);
+  assert.match(html, /chat\.addEventListener\("scroll",\s*\(\)\s*=>\s*\{\s*followLiveOutput\s*=\s*isNearChatBottom\(\)/);
+  assert.match(html, /function scrollBottom\(\{force=false\}=\{\}\)/);
+  assert.match(html, /if\(!force && !followLiveOutput\) return;/);
+});
