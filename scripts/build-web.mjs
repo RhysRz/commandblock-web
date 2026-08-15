@@ -7,11 +7,13 @@ const sourcePath = resolve(root, 'src/ui.html');
 const adapterPath = resolve(root, 'web/cloud-adapter.js');
 const recoveryPath = resolve(root, 'web/chat-recovery.js');
 const timelinePath = resolve(root, 'web/chat-timeline.js');
+const sessionStorePath = resolve(root, 'web/session-store.js');
 const sitePath = resolve(root, 'site');
 
 if (!existsSync(adapterPath)) throw new Error('Missing web/cloud-adapter.js');
 if (!existsSync(recoveryPath)) throw new Error('Missing web/chat-recovery.js');
 if (!existsSync(timelinePath)) throw new Error('Missing web/chat-timeline.js');
+if (!existsSync(sessionStorePath)) throw new Error('Missing web/session-store.js');
 
 rmSync(sitePath, { recursive: true, force: true });
 mkdirSync(sitePath, { recursive: true });
@@ -37,3 +39,4 @@ copyFileSync(resolve(root, 'web/manifest.webmanifest'), resolve(sitePath, 'manif
 if (existsSync(resolve(root, 'assets'))) cpSync(resolve(root, 'assets'), resolve(sitePath, 'assets'), { recursive: true });
 mkdirSync(resolve(sitePath, 'assets'), { recursive: true });
 copyFileSync(timelinePath, resolve(sitePath, 'assets', 'chat-timeline.js'));
+copyFileSync(sessionStorePath, resolve(sitePath, 'assets', 'session-store.js'));
