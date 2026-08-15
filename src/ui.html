@@ -887,7 +887,7 @@
   body.mobmenu .mob-backdrop, body.mobhist .mob-backdrop { display: block; }
   @media (max-width: 900px) {
     /* ซ่อน panel คงที่ → กลายเป็น overlay เลื่อนจากขอบ */
-    :root { --mobile-top-clearance: calc(env(safe-area-inset-top, 0px) + 34px); }
+    :root { --mobile-top-clearance: calc(env(safe-area-inset-top, 0px) + 6px); }
     body, body.nohist { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
     body.nohist #histpane, body.nohist #rightpane { display: block; }
     #iconrail { display: none; }
@@ -898,8 +898,8 @@
       box-shadow: 0 8px 26px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.12);
       backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); font-size: 18px;
     }
-    #mobileHistoryToggle { top: calc(env(safe-area-inset-top, 0px) + 16px); left: 10px; }
-    .mobile-fab-stack { display: flex; position: fixed; z-index: 70; top: calc(env(safe-area-inset-top, 0px) + 16px); right: 10px; gap: 8px; flex-direction: column; }
+    #mobileHistoryToggle { top: calc(env(safe-area-inset-top, 0px) + 6px); left: 10px; }
+    .mobile-fab-stack { display: flex; position: fixed; z-index: 70; top: calc(env(safe-area-inset-top, 0px) + 6px); right: 10px; gap: 8px; flex-direction: column; }
     .mobile-fab-stack .mobile-fab { position: static; }
     #chatpane { grid-row: 1; grid-column: 1; padding-top: var(--mobile-top-clearance); }
     #histpane {

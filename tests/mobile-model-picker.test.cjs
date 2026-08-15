@@ -12,7 +12,9 @@ test('mobile exposes a native model dropdown, binds settings after its function,
   assert.match(html, /function renderMobileModelSelect\(list\)/);
   assert.match(html, /mobileModelSelect\.addEventListener\("change"/);
   assert.match(html, /@media \(max-width: 900px\)[\s\S]*#mobileModelSelect\s*\{[\s\S]*display:\s*block/);
-  assert.match(html, /--mobile-top-clearance: calc\(env\(safe-area-inset-top, 0px\) \+ 34px\)/);
+  assert.match(html, /--mobile-top-clearance: calc\(env\(safe-area-inset-top, 0px\) \+ 6px\)/);
+  assert.match(html, /#mobileHistoryToggle \{ top: calc\(env\(safe-area-inset-top, 0px\) \+ 6px\);/);
+  assert.match(html, /\.mobile-fab-stack \{[\s\S]*top: calc\(env\(safe-area-inset-top, 0px\) \+ 6px\);/);
   assert.match(html, /#chatpane\s*\{[^}]*padding-top: var\(--mobile-top-clearance\);/);
   assert.ok(
     html.indexOf('function openSettings()') < html.lastIndexOf('mobileSettingsToggle.addEventListener("click", openSettings)'),
