@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CommandBlock — ผู้ช่วยพัฒนาโค้ด AI</title>
 <style>
   :root {
@@ -887,6 +887,7 @@
   body.mobmenu .mob-backdrop, body.mobhist .mob-backdrop { display: block; }
   @media (max-width: 900px) {
     /* ซ่อน panel คงที่ → กลายเป็น overlay เลื่อนจากขอบ */
+    :root { --mobile-top-clearance: calc(env(safe-area-inset-top, 0px) + 54px); }
     body, body.nohist { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
     body.nohist #histpane, body.nohist #rightpane { display: block; }
     #iconrail { display: none; }
@@ -897,18 +898,18 @@
       box-shadow: 0 8px 26px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.12);
       backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); font-size: 18px;
     }
-    #mobileHistoryToggle { top: 10px; left: 10px; }
-    .mobile-fab-stack { display: flex; position: fixed; z-index: 70; top: 10px; right: 10px; gap: 8px; flex-direction: column; }
+    #mobileHistoryToggle { top: calc(env(safe-area-inset-top, 0px) + 16px); left: 10px; }
+    .mobile-fab-stack { display: flex; position: fixed; z-index: 70; top: calc(env(safe-area-inset-top, 0px) + 16px); right: 10px; gap: 8px; flex-direction: column; }
     .mobile-fab-stack .mobile-fab { position: static; }
-    #chatpane { grid-row: 1; grid-column: 1; }
+    #chatpane { grid-row: 1; grid-column: 1; padding-top: var(--mobile-top-clearance); }
     #histpane {
-      position: fixed; top: 0; left: 0; bottom: 0; width: min(86vw, 360px);
+      position: fixed; top: 0; left: 0; bottom: 0; width: min(86vw, 360px); padding-top: var(--mobile-top-clearance);
       z-index: 60; transform: translateX(-105%); transition: transform .28s ease;
       box-shadow: 0 0 40px rgba(0,0,0,.5); border-right: 1px solid var(--border);
     }
     body.mobhist #histpane { transform: translateX(0); }
     #rightpane {
-      position: fixed; top: 0; right: 0; bottom: 0; width: min(94vw, 420px);
+      position: fixed; top: 0; right: 0; bottom: 0; width: min(94vw, 420px); padding-top: var(--mobile-top-clearance);
       z-index: 60; transform: translateX(105%); transition: transform .28s ease;
       box-shadow: 0 0 40px rgba(0,0,0,.5); border-left: 1px solid var(--border);
     }
