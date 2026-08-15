@@ -635,6 +635,15 @@
     border-radius: 7px; padding: 7px 18px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit;
   }
   .btn-save:hover { background: #fff; }
+  .confirm-card { width: min(430px, calc(100vw - 28px)); max-height: none; }
+  .confirm-body { display: flex; gap: 12px; align-items: flex-start; padding: 18px 16px; }
+  .confirm-mark {
+    width: 31px; height: 31px; flex: 0 0 auto; display: grid; place-items: center;
+    border-radius: 10px; color: #f2eaff; background: rgba(158, 101, 255, .18);
+    border: 1px solid rgba(194, 140, 255, .32); font-size: 16px;
+  }
+  .confirm-copy { color: var(--muted); font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+  .confirm-danger { background: linear-gradient(135deg, #9a3f82, #d05b9d) !important; }
 
   /* ============ OBSIDIAN LIQUID GLASS ============ */
   :root {
@@ -1760,7 +1769,14 @@ togglePinSession.addEventListener("click", async()=>{
   }catch(error){ toast(error.message||"บันทึกการปักหมุด SESSION ไม่สำเร็จ", "err"); }
 });
 async function deleteSession(id, title){
-  if(!id || !window.confirm("ลบ SESSION ‘"+(title||"แชทใหม่")+"’ และข้อความทั้งหมดในนี้หรือไม่?")) return;
+  if(!id) return;
+  const confirmed=await confirmAction({
+    title:"ลบ SESSION?",
+    message:"ลบ SESSION ‘"+(title||"แชทใหม่")+"’ และข้อความทั้งหมดในนี้หรือไม่? การลบไม่สามารถย้อนกลับได้",
+    confirmLabel:"ลบ SESSION",
+    danger:true,
+  });
+  if(!confirmed) return;
   try{
     const res=await fetch("/api/conversations/"+encodeURIComponent(id)+"/delete",{method:"POST"});
     const data=await res.json(); if(!res.ok) throw new Error(data.error||"ลบ SESSION ไม่สำเร็จ");
@@ -2448,6 +2464,14 @@ document.getElementById("fb").addEventListener("click",()=>{
   </div>
 </div>
 
+<div class="modal" id="confirmModal" hidden>
+  <div class="modal-card confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
+    <div class="modal-head"><span class="modal-title" id="confirmTitle">ยืนยันการทำรายการ</span></div>
+    <div class="confirm-body"><span class="confirm-mark" aria-hidden="true">?</span><p class="confirm-copy" id="confirmBody"></p></div>
+    <div class="modal-foot"><span></span><span class="set-actions"><button class="btn-cancel" id="confirmCancel" type="button">ยกเลิก</button><button class="btn-save" id="confirmApprove" type="button">ยืนยัน</button></span></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -2564,6 +2588,34 @@ function renderPluginCatalog(query){
     section.appendChild(grid); pluginCatalogList.appendChild(section);
   });
 }
+
+/* ---------- Confirm dialog: ใช้แทน browser/WebView confirm ---------- */
+const confirmModal = document.getElementById("confirmModal");
+const confirmTitle = document.getElementById("confirmTitle");
+const confirmBody = document.getElementById("confirmBody");
+const confirmCancel = document.getElementById("confirmCancel");
+const confirmApprove = document.getElementById("confirmApprove");
+let pendingConfirmation = null;
+function settleConfirmation(value){
+  const pending = pendingConfirmation;
+  pendingConfirmation = null;
+  confirmModal.hidden = true;
+  if(pending) pending.resolve(Boolean(value));
+}
+function confirmAction(options){
+  if(pendingConfirmation) settleConfirmation(false);
+  const config = options || {};
+  confirmTitle.textContent = config.title || "ยืนยันการทำรายการ";
+  confirmBody.textContent = config.message || "ต้องการทำรายการนี้หรือไม่?";
+  confirmApprove.textContent = config.confirmLabel || "ยืนยัน";
+  confirmApprove.classList.toggle("confirm-danger", Boolean(config.danger));
+  confirmModal.hidden = false;
+  window.setTimeout(()=>confirmCancel.focus(), 0);
+  return new Promise(resolve=>{ pendingConfirmation = { resolve }; });
+}
+confirmCancel.addEventListener("click", ()=>settleConfirmation(false));
+confirmApprove.addEventListener("click", ()=>settleConfirmation(true));
+confirmModal.addEventListener("click", event=>{ if(event.target===confirmModal) settleConfirmation(false); });
 function openPluginCatalog(){ pluginCatalog.hidden=false; pluginCatalogMode="public"; pluginSearch.value=""; document.querySelectorAll("[data-plugin-mode]").forEach(button=>button.classList.toggle("active",button.dataset.pluginMode==="public")); renderPluginCatalog(""); pluginSearch.focus(); }
 function closePluginCatalog(){ pluginCatalog.hidden=true; }
 pluginsBtn.addEventListener("click",openPluginCatalog);
@@ -2662,7 +2714,14 @@ document.getElementById("backupCreate").addEventListener("click", async()=>{
 });
 document.getElementById("backupRestore").addEventListener("click", async()=>{
   const name = document.getElementById("backupList").value;
-  if(!name || !confirm("กู้คืนการตั้งค่าชุดนี้? การตั้งค่าปัจจุบันจะถูกแทนที่")) return;
+  if(!name) return;
+  const confirmed=await confirmAction({
+    title:"กู้คืน Backup?",
+    message:"การตั้งค่าปัจจุบันจะถูกแทนที่ด้วยชุดสำรองที่เลือก",
+    confirmLabel:"กู้คืน",
+    danger:false,
+  });
+  if(!confirmed) return;
   try{
     const j = await fetch("/api/backup", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({action:"restore", name})}).then(r=>r.json());
     if(!j.ok) throw new Error(j.error || "กู้คืนไม่สำเร็จ");
@@ -2695,7 +2754,7 @@ document.getElementById("settingsSave").addEventListener("click", async ()=>{
     }
   }catch(e){ toast("เกิดข้อผิดพลาด: " + e, "err"); }
 });
-document.addEventListener("keydown", e=>{ if(e.key === "Escape" && !settingsModal.hidden) closeSettings(); if(e.key === "Escape" && !pluginCatalog.hidden) closePluginCatalog(); });
+document.addEventListener("keydown", e=>{ if(e.key === "Escape" && !confirmModal.hidden) settleConfirmation(false); if(e.key === "Escape" && !settingsModal.hidden) closeSettings(); if(e.key === "Escape" && !pluginCatalog.hidden) closePluginCatalog(); });
 /* ---------- ตรวจอัปเดตทันที (Project settings) ---------- */
 async function renderUpdateCheck(){
   const desc = document.getElementById("updateDesc");
@@ -2745,7 +2804,13 @@ document.getElementById("accountLogin").addEventListener("click", () => {
   showAuthScreen();
 });
 document.getElementById("accountLogout").addEventListener("click", async () => {
-  if (!confirm("ออกจากระบบ? ข้อมูลของบัญชีนี้ยังเก็บอยู่บนเครื่อง")) return;
+  const confirmed=await confirmAction({
+    title:"ออกจากระบบ?",
+    message:"ข้อมูลของบัญชีนี้ยังเก็บอยู่บนเครื่อง แต่ต้องลงชื่อเข้าใช้อีกครั้งเพื่อซิงก์",
+    confirmLabel:"ออกจากระบบ",
+    danger:false,
+  });
+  if(!confirmed) return;
   stopConversationSync();
   try {
     await fetch("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
