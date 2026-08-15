@@ -1572,7 +1572,9 @@ impl TurnSink for SseSink<'_> {
     fn think(&mut self, text: &str) {
         let _ = sse(self.out, "think", json!({"t": text}));
     }
-    fn tools_begin(&mut self) {}
+    fn tools_begin(&mut self) {
+        let _ = sse(self.out, "tools_begin", json!({}));
+    }
     fn tool(&mut self, name: &str, args: &Value) {
         let _ = sse(
             self.out,
