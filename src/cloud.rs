@@ -153,6 +153,26 @@ pub fn create_conversation(agent: &ureq::Agent, model: &str) -> Result<CloudConv
     Ok(conversation)
 }
 
+pub fn delete_conversation(agent: &ureq::Agent, conversation_id: &str) -> Result<(), String> {
+    if conversation_id.is_empty()
+        || !conversation_id
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit() || ch == '-')
+    {
+        return Err("รหัส SESSION ไม่ถูกต้อง".to_string());
+    }
+    let pair = auth::refresh_token(agent)?;
+    let a = sync_agent();
+    let url = format!(
+        "{SUPABASE_URL}/rest/v1/conversations?id=eq.{conversation_id}&user_id=eq.{}",
+        pair.user_id
+    );
+    authed(a.delete(&url), &pair.access_token)
+        .call()
+        .map_err(|_| "ลบ SESSION ไม่สำเร็จ".to_string())?;
+    Ok(())
+}
+
 fn cloud_messages(
     a: &ureq::Agent,
     pair: &auth::TokenPair,

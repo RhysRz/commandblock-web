@@ -26,3 +26,15 @@ test('shared UI labels the panel SESSION and provides new-session and context pi
   assert.match(ui, /Pin message/);
   assert.match(ui, /\/assets\/session-store\.js/);
 });
+
+test('shared UI opens an Obsidian context popup for messages and SESSION deletion', () => {
+  const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
+  const adapter = fs.readFileSync(path.join(root, 'web', 'cloud-adapter.js'), 'utf8');
+
+  assert.match(ui, /id="deleteSession"/);
+  assert.match(ui, /function openContextMenu/);
+  assert.match(ui, /function deleteSession/);
+  assert.match(ui, /background:\s*#120b20/);
+  assert.match(ui, /kind:\s*["']session["']/);
+  assert.match(adapter, /async function deleteConversation/);
+});

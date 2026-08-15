@@ -1034,6 +1034,26 @@ fn handle(
             }
             Err(error) => respond(&mut out, 401, "application/json", json!({"error": error}).to_string().as_bytes()),
         },
+        ("POST", _) if path.starts_with("/api/conversations/") && path.ends_with("/delete") => {
+            let conversation_id = path
+                .trim_start_matches("/api/conversations/")
+                .trim_end_matches("/delete")
+                .trim_matches('/');
+            match cloud::delete_conversation(agent, conversation_id) {
+                Ok(()) => {
+                    let mut g = shared.lock().unwrap();
+                    if g.conversation_id.as_deref() == Some(conversation_id) {
+                        g.conversation_id = None;
+                        g.history = vec![json!({"role": "system", "content": crate::system_prompt()})];
+                        g.plan = None;
+                        g.rebuild_system();
+                        crate::save_session_at(&session_path_for(&g.account), &g.history);
+                    }
+                    respond(&mut out, 200, "application/json", b"{\"ok\":true}");
+                }
+                Err(error) => respond(&mut out, 400, "application/json", json!({"error": error}).to_string().as_bytes()),
+            }
+        }
         ("POST", "/api/conversations") => {
             let model = shared.lock().unwrap().model.clone();
             match cloud::create_conversation(agent, &model) {

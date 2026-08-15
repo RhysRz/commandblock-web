@@ -132,6 +132,12 @@
     if (error || !data) throw new Error('บันทึกการปักหมุดไม่สำเร็จ');
     return data;
   }
+  async function deleteConversation(session, id) {
+    const { error } = await client.from('conversations').delete()
+      .eq('id', id).eq('user_id', session.user.id);
+    if (error) throw new Error('ลบ SESSION ไม่สำเร็จ');
+    if (conversationId === id) conversationId = null;
+  }
   async function saveMessage(session, role, content) {
     const id = await ensureConversation(session);
     const title = role === 'user' ? (content || 'แชทใหม่').trim().slice(0, 80) : null;
@@ -597,6 +603,14 @@
         if ((init?.method || 'GET').toUpperCase() === 'POST') return json({ conversation: await createConversation(session) });
         return json({ conversations: await listConversations(session), conversation_id: await activeConversationForUser(session) });
       } catch (error) { return json({ error: error.message || 'โหลด SESSION ไม่สำเร็จ' }, 401); }
+    }
+    if (/^\/api\/conversations\/[^/]+\/delete$/.test(path) && (init?.method || 'GET').toUpperCase() === 'POST') {
+      try {
+        const session = await currentSession();
+        const id = path.split('/')[3];
+        await deleteConversation(session, id);
+        return json({ ok: true });
+      } catch (error) { return json({ error: error.message || 'ลบ SESSION ไม่สำเร็จ' }, 400); }
     }
     if (path === '/api/conversation/sync') return cloudConversationSync(input);
     if (/^\/api\/messages\/[^/]+\/pin$/.test(path) && (init?.method || 'GET').toUpperCase() === 'POST') {

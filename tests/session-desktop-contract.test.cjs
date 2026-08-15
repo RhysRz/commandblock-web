@@ -17,6 +17,16 @@ test('desktop API exposes explicit SESSION and pin endpoints', () => {
   assert.match(cloud, /pub fn set_message_pin/);
 });
 
+test('desktop API deletes only the selected owner-scoped SESSION', () => {
+  const gui = fs.readFileSync(path.join(root, 'src', 'gui.rs'), 'utf8');
+  const cloud = fs.readFileSync(path.join(root, 'src', 'cloud.rs'), 'utf8');
+
+  assert.match(gui, /path\.starts_with\("\/api\/conversations\/"\).*ends_with\("\/delete"\)/s);
+  assert.match(cloud, /pub fn delete_conversation/);
+  assert.match(cloud, /a\.delete\(&url\)/);
+  assert.match(cloud, /conversations\?id=eq\.\{conversation_id\}&user_id=eq/);
+});
+
 test('cloud reads pin state and scopes selected conversation requests', () => {
   const cloud = fs.readFileSync(path.join(root, 'src', 'cloud.rs'), 'utf8');
 
