@@ -16,6 +16,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release
       - shell: pwsh
@@ -37,4 +39,8 @@ jobs:
             Write-Host "Runtime release $tag already exists; skipping duplicate release."
             exit 0
           }
-          gh release create $tag CommandBlock-Windows-x64.zip CommandBlock-Windows-x64.zip.sha256 --title "CommandBlock build $buildId" --generate-notes --latest
+          $previousTag = (git tag --list "build-*" --sort=-creatordate | Select-Object -First 1).Trim()
+          $noteParams = @{ BuildId = $buildId; Repository = "${{ github.repository }}" }
+          if (![string]::IsNullOrWhiteSpace($previousTag)) { $noteParams.PreviousTag = $previousTag }
+          & .\tools\render-release-notes.ps1 @noteParams | Set-Content -LiteralPath release-notes.md -NoNewline -Encoding utf8
+          gh release create $tag CommandBlock-Windows-x64.zip CommandBlock-Windows-x64.zip.sha256 --title "CommandBlock build $buildId" --notes-file release-notes.md --latest

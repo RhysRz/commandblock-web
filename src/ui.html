@@ -360,6 +360,10 @@
   #updateDownload:disabled { cursor: wait; opacity: .7; }
   .update-notes { width: 100%; color: var(--muted); }
   .update-notes summary { cursor: pointer; color: var(--text); font-size: 11px; }
+  .update-notes-summary { margin: 7px 0 0; padding: 8px 10px; border: 1px solid rgba(194, 140, 255, .2); border-radius: 8px; background: rgba(150, 93, 245, .08); }
+  .update-notes-summary[hidden] { display: none; }
+  .update-notes-summary strong { display: block; color: #e9ddff; font-size: 11px; margin-bottom: 4px; }
+  .update-notes-summary ul { margin: 0; padding-left: 16px; color: #d8c7f5; font-size: 11px; line-height: 1.55; font-family: "Segoe UI", "Noto Sans Thai", sans-serif; }
   .update-notes pre { margin: 6px 0 0; max-height: 110px; overflow: auto; white-space: pre-wrap; font: 10.5px/1.5 Consolas, monospace; color: var(--muted); }
   .backup-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .backup-row select { flex: 1; min-width: 180px; background: var(--ink); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; font: 12px Consolas, monospace; }
@@ -1123,7 +1127,7 @@
       <span class="update-progress" id="updateProgress" hidden><i></i></span>
       <button id="updateDownload" hidden>ดาวน์โหลด</button>
       <button id="updateInstall" hidden>ติดตั้งและเปิดใหม่</button>
-      <details class="update-notes" id="updateNotes" hidden><summary>รายการเปลี่ยนแปลง</summary><pre id="updateNotesText"></pre><a id="updateNotesLink" target="_blank" rel="noopener" hidden>เปิด release บน GitHub</a></details>
+      <details class="update-notes" id="updateNotes" hidden><summary>รายการเปลี่ยนแปลง</summary><div class="update-notes-summary" id="updateNotesSummary" hidden><strong>สรุปการอัปเดต</strong><ul id="updateNotesSummaryList"></ul></div><pre id="updateNotesText"></pre><a id="updateNotesLink" target="_blank" rel="noopener" hidden>เปิด release บน GitHub</a></details>
     </div>
     <input type="file" id="fileInput" multiple hidden>
     <div class="statusbar" id="mobileStatusDrawer" aria-label="ข้อมูลสถานะและบัญชี">
@@ -1438,12 +1442,21 @@ const updateDownload = document.getElementById("updateDownload");
 const updateInstall = document.getElementById("updateInstall");
 const updateNotes = document.getElementById("updateNotes");
 const updateNotesText = document.getElementById("updateNotesText");
+const updateNotesSummary = document.getElementById("updateNotesSummary");
+const updateNotesSummaryList = document.getElementById("updateNotesSummaryList");
 const updateNotesLink = document.getElementById("updateNotesLink");
 let updateProgressSample = null;
 function updateSize(bytes){
   if (!Number.isFinite(bytes) || bytes < 0) return "";
   if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
   return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+function splitReleaseNotes(notes){
+  const raw = String(notes || "").replace(/\r\n/g, "\n");
+  const match = raw.match(/^##\s*สรุปการอัปเดต\s*\n([\s\S]*?)(?:\n##\s*รายละเอียดการเปลี่ยนแปลง\s*\n?|$)/m);
+  const summary = match ? [...match[1].matchAll(/^\s*-\s+(.+)$/gm)].map(item=>item[1].trim()).filter(Boolean) : [];
+  const details = match ? raw.replace(match[0], "").trim() : raw.trim();
+  return { summary, details };
 }
 function renderUpdate(s){
   const active = s && ["available", "downloading", "ready", "error"].includes(s.state);
@@ -1457,7 +1470,11 @@ function renderUpdate(s){
   const hasNotes = s.state === "available" && (!!s.release_notes || !!s.release_url);
   updateNotes.hidden = !hasNotes;
   if (hasNotes) {
-    updateNotesText.textContent = s.release_notes || "ไม่มีรายละเอียดเพิ่มเติม";
+    const notes = splitReleaseNotes(s.release_notes || "");
+    updateNotesSummaryList.replaceChildren();
+    notes.summary.forEach(text=>{ const item=document.createElement("li"); item.textContent=text; updateNotesSummaryList.appendChild(item); });
+    updateNotesSummary.hidden = notes.summary.length === 0;
+    updateNotesText.textContent = notes.details || "ไม่มีรายละเอียดเพิ่มเติม";
     updateNotesLink.hidden = !s.release_url;
     updateNotesLink.href = s.release_url || "#";
   }
