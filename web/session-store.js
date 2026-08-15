@@ -4,6 +4,8 @@
   }
 
   function compareSessions(a, b) {
+    const pin = Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned));
+    if (pin) return pin;
     const updated = compareText(b.updated_at, a.updated_at);
     return updated || compareText(b.id, a.id);
   }

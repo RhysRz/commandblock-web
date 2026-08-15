@@ -86,8 +86,8 @@
     return `${ACTIVE_CONVERSATION_NAME}:${session.user.id}`;
   }
   async function listConversations(session) {
-    const { data, error } = await client.from('conversations').select('id,title,model_id,created_at,updated_at')
-      .eq('user_id', session.user.id).order('updated_at', { ascending: false }).order('id', { ascending: false });
+    const { data, error } = await client.from('conversations').select('id,title,model_id,is_pinned,created_at,updated_at')
+      .eq('user_id', session.user.id).order('is_pinned', { ascending: false }).order('updated_at', { ascending: false }).order('id', { ascending: false });
     if (error) throw new Error('โหลด SESSION ไม่สำเร็จ');
     return data || [];
   }
@@ -137,6 +137,12 @@
       .eq('id', id).eq('user_id', session.user.id);
     if (error) throw new Error('ลบ SESSION ไม่สำเร็จ');
     if (conversationId === id) conversationId = null;
+  }
+  async function toggleConversationPin(session, id, isPinned) {
+    const { data, error } = await client.from('conversations').update({ is_pinned: Boolean(isPinned) })
+      .eq('id', id).eq('user_id', session.user.id).select('id,is_pinned').maybeSingle();
+    if (error || !data) throw new Error('บันทึกการปักหมุด SESSION ไม่สำเร็จ');
+    return data;
   }
   async function saveMessage(session, role, content) {
     const id = await ensureConversation(session);
@@ -611,6 +617,14 @@
         await deleteConversation(session, id);
         return json({ ok: true });
       } catch (error) { return json({ error: error.message || 'ลบ SESSION ไม่สำเร็จ' }, 400); }
+    }
+    if (/^\/api\/conversations\/[^/]+\/pin$/.test(path) && (init?.method || 'GET').toUpperCase() === 'POST') {
+      try {
+        const session = await currentSession();
+        const id = path.split('/')[3];
+        const { is_pinned } = requestBody(init);
+        return json({ conversation: await toggleConversationPin(session, id, is_pinned) });
+      } catch (error) { return json({ error: error.message || 'บันทึกการปักหมุด SESSION ไม่สำเร็จ' }, 400); }
     }
     if (path === '/api/conversation/sync') return cloudConversationSync(input);
     if (/^\/api\/messages\/[^/]+\/pin$/.test(path) && (init?.method || 'GET').toUpperCase() === 'POST') {

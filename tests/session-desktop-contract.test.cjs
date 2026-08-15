@@ -27,6 +27,16 @@ test('desktop API deletes only the selected owner-scoped SESSION', () => {
   assert.match(cloud, /conversations\?id=eq\.\{conversation_id\}&user_id=eq/);
 });
 
+test('desktop API persists a pin state for the selected owner-scoped SESSION', () => {
+  const gui = fs.readFileSync(path.join(root, 'src', 'gui.rs'), 'utf8');
+  const cloud = fs.readFileSync(path.join(root, 'src', 'cloud.rs'), 'utf8');
+
+  assert.match(gui, /path\.starts_with\("\/api\/conversations\/"\).*ends_with\("\/pin"\)/s);
+  assert.match(cloud, /pub fn set_conversation_pin/);
+  assert.match(cloud, /json!\(\{"is_pinned": is_pinned\}\)/);
+  assert.match(cloud, /select=id,title,model_id,is_pinned,created_at,updated_at/);
+});
+
 test('cloud reads pin state and scopes selected conversation requests', () => {
   const cloud = fs.readFileSync(path.join(root, 'src', 'cloud.rs'), 'utf8');
 

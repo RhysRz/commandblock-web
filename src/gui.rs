@@ -1027,13 +1027,39 @@ fn handle(
             Ok(conversations) => {
                 let active = shared.lock().unwrap().conversation_id.clone();
                 let rows: Vec<Value> = conversations.into_iter().map(|row| json!({
-                    "id": row.id, "title": row.title, "model_id": row.model_id,
+                    "id": row.id, "title": row.title, "model_id": row.model_id, "is_pinned": row.is_pinned,
                     "created_at": row.created_at, "updated_at": row.updated_at
                 })).collect();
                 respond(&mut out, 200, "application/json", json!({"conversations": rows, "conversation_id": active}).to_string().as_bytes());
             }
             Err(error) => respond(&mut out, 401, "application/json", json!({"error": error}).to_string().as_bytes()),
         },
+        ("POST", _) if path.starts_with("/api/conversations/") && path.ends_with("/pin") => {
+            let conversation_id = path
+                .trim_start_matches("/api/conversations/")
+                .trim_end_matches("/pin")
+                .trim_matches('/');
+            let is_pinned = serde_json::from_str::<Value>(&body_str)
+                .ok()
+                .and_then(|value| value.get("is_pinned").and_then(Value::as_bool))
+                .unwrap_or(false);
+            match cloud::set_conversation_pin(agent, conversation_id, is_pinned) {
+                Ok(value) => respond(
+                    &mut out,
+                    200,
+                    "application/json",
+                    json!({"conversation": {"id": conversation_id, "is_pinned": value}})
+                        .to_string()
+                        .as_bytes(),
+                ),
+                Err(error) => respond(
+                    &mut out,
+                    400,
+                    "application/json",
+                    json!({"error": error}).to_string().as_bytes(),
+                ),
+            }
+        }
         ("POST", _) if path.starts_with("/api/conversations/") && path.ends_with("/delete") => {
             let conversation_id = path
                 .trim_start_matches("/api/conversations/")
@@ -1065,6 +1091,7 @@ fn handle(
                     g.rebuild_system();
                     respond(&mut out, 200, "application/json", json!({"conversation": {
                         "id": row.id, "title": row.title, "model_id": row.model_id,
+                        "is_pinned": row.is_pinned,
                         "created_at": row.created_at, "updated_at": row.updated_at
                     }}).to_string().as_bytes());
                 }

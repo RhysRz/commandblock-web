@@ -24,6 +24,17 @@ test('sessions order newest update first with id as a stable tie breaker', () =>
   assert.deepEqual(rows.map((row) => row.id), ['c', 'b', 'a']);
 });
 
+test('pinned sessions sort before more recently updated unpinned sessions', () => {
+  const api = sessions();
+  const rows = [
+    { id: 'latest', updated_at: '2026-08-16T10:03:00.000Z', is_pinned: false },
+    { id: 'pinned', updated_at: '2026-08-16T10:01:00.000Z', is_pinned: true },
+  ];
+
+  rows.sort(api.compareSessions);
+  assert.deepEqual(rows.map((row) => row.id), ['pinned', 'latest']);
+});
+
 test('pinning returns a new row and keeps the original row unchanged', () => {
   const api = sessions();
   const before = { id: 'm1', is_pinned: false };

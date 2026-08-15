@@ -28,6 +28,7 @@ pub struct CloudConversation {
     pub id: String,
     pub title: String,
     pub model_id: String,
+    pub is_pinned: bool,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -89,7 +90,7 @@ fn text_messages(history: &[Value]) -> Vec<(String, String)> {
 
 fn conversations(a: &ureq::Agent, pair: &auth::TokenPair) -> Result<Vec<CloudConversation>, String> {
     let url = format!(
-        "{SUPABASE_URL}/rest/v1/conversations?select=id,title,model_id,created_at,updated_at&user_id=eq.{}&order=updated_at.desc,id.desc",
+        "{SUPABASE_URL}/rest/v1/conversations?select=id,title,model_id,is_pinned,created_at,updated_at&user_id=eq.{}&order=is_pinned.desc,updated_at.desc,id.desc",
         pair.user_id
     );
     let rows: Vec<Value> = authed(a.get(&url), &pair.access_token)
@@ -103,6 +104,7 @@ fn conversations(a: &ureq::Agent, pair: &auth::TokenPair) -> Result<Vec<CloudCon
             id: row.get("id")?.as_str()?.to_string(),
             title: row.get("title").and_then(Value::as_str).unwrap_or("แชทใหม่").to_string(),
             model_id: row.get("model_id").and_then(Value::as_str).unwrap_or_default().to_string(),
+            is_pinned: row.get("is_pinned").and_then(Value::as_bool).unwrap_or(false),
             created_at: row.get("created_at").and_then(Value::as_str).unwrap_or_default().to_string(),
             updated_at: row.get("updated_at").and_then(Value::as_str).unwrap_or_default().to_string(),
         }))
@@ -146,6 +148,7 @@ pub fn create_conversation(agent: &ureq::Agent, model: &str) -> Result<CloudConv
         id: row.get("id").and_then(Value::as_str).ok_or_else(|| "อ่าน SESSION ใหม่ไม่สำเร็จ".to_string())?.to_string(),
         title: row.get("title").and_then(Value::as_str).unwrap_or("แชทใหม่").to_string(),
         model_id: row.get("model_id").and_then(Value::as_str).unwrap_or(model).to_string(),
+        is_pinned: row.get("is_pinned").and_then(Value::as_bool).unwrap_or(false),
         created_at: row.get("created_at").and_then(Value::as_str).unwrap_or_default().to_string(),
         updated_at: row.get("updated_at").and_then(Value::as_str).unwrap_or_default().to_string(),
     };
@@ -171,6 +174,38 @@ pub fn delete_conversation(agent: &ureq::Agent, conversation_id: &str) -> Result
         .call()
         .map_err(|_| "ลบ SESSION ไม่สำเร็จ".to_string())?;
     Ok(())
+}
+
+pub fn set_conversation_pin(
+    agent: &ureq::Agent,
+    conversation_id: &str,
+    is_pinned: bool,
+) -> Result<bool, String> {
+    if conversation_id.is_empty()
+        || !conversation_id
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit() || ch == '-')
+    {
+        return Err("รหัส SESSION ไม่ถูกต้อง".to_string());
+    }
+    let pair = auth::refresh_token(agent)?;
+    let a = sync_agent();
+    let url = format!(
+        "{SUPABASE_URL}/rest/v1/conversations?id=eq.{conversation_id}&user_id=eq.{}",
+        pair.user_id
+    );
+    let rows: Vec<Value> = authed(
+        a.patch(&url).set("Prefer", "return=representation"),
+        &pair.access_token,
+    )
+    .send_json(json!({"is_pinned": is_pinned}))
+    .map_err(|_| "บันทึกการปักหมุด SESSION ไม่สำเร็จ".to_string())?
+    .into_json()
+    .map_err(|_| "อ่านผลการปักหมุด SESSION ไม่สำเร็จ".to_string())?;
+    if rows.is_empty() {
+        return Err("ไม่พบ SESSION นี้".to_string());
+    }
+    Ok(is_pinned)
 }
 
 fn cloud_messages(

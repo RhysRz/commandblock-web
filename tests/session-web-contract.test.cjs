@@ -12,8 +12,19 @@ test('browser adapter creates and selects explicit sessions instead of always se
   assert.match(adapter, /async function createConversation\(session\)/);
   assert.match(adapter, /async function selectConversation\(session, id\)/);
   assert.match(adapter, /async function toggleMessagePin\(session, id, isPinned\)/);
-  assert.match(adapter, /select\('id,title,model_id,created_at,updated_at'\)/);
+  assert.match(adapter, /select\('id,title,model_id,is_pinned,created_at,updated_at'\)/);
   assert.match(adapter, /select\('id,role,content,created_at,is_pinned'\)/);
+});
+
+test('web adapter and shared UI pin SESSION rows durably', () => {
+  const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
+  const adapter = fs.readFileSync(path.join(root, 'web', 'cloud-adapter.js'), 'utf8');
+
+  assert.match(ui, /id="togglePinSession"/);
+  assert.match(ui, /\/api\/conversations\/"\+encodeURIComponent\(current\.id\)\+"\/pin/);
+  assert.match(ui, /row\.is_pinned\?"📌":"◌"/);
+  assert.match(adapter, /async function toggleConversationPin/);
+  assert.match(adapter, /select\('id,title,model_id,is_pinned,created_at,updated_at'\)/);
 });
 
 test('shared UI labels the panel SESSION and provides new-session and context pin controls', () => {

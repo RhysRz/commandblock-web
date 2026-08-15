@@ -1113,7 +1113,7 @@
   <div class="hist-head">SESSION <button id="newSession" class="session-new" type="button">+ New session</button><button class="mob-close" data-close="mobhist" title="ปิดแผง">✕</button></div>
   <div class="hist-list" id="histList"></div>
 </aside>
-<div id="messageContextMenu" role="menu" hidden><button id="togglePinMessage" type="button">📌 Pin message</button><button id="deleteSession" class="context-danger" type="button" hidden>🗑 ลบ SESSION</button></div>
+<div id="messageContextMenu" role="menu" hidden><button id="togglePinMessage" type="button">📌 Pin message</button><button id="togglePinSession" type="button" hidden>📌 Pin SESSION</button><button id="deleteSession" class="context-danger" type="button" hidden>🗑 ลบ SESSION</button></div>
 
 <!-- ================= RIGHT: tabs ================= -->
 <section id="rightpane">
@@ -1590,6 +1590,7 @@ const sessionStore = window.CommandBlockSessions;
 const pinnedMessages = document.getElementById("pinnedMessages");
 const messageContextMenu = document.getElementById("messageContextMenu");
 const togglePinMessage = document.getElementById("togglePinMessage");
+const togglePinSession = document.getElementById("togglePinSession");
 const deleteSessionButton = document.getElementById("deleteSession");
 function conversationTextKey(role, content){ return role+"\n"+String(content||""); }
 function rowKey(row){ return chatTimeline.messageKey(row); }
@@ -1607,12 +1608,15 @@ function openContextMenu(target, event){
   event.preventDefault();
   contextTarget=target;
   const messageTarget=target.kind==="message";
+  const sessionTarget=target.kind==="session";
   togglePinMessage.hidden=!messageTarget;
-  deleteSessionButton.hidden=target.kind!=="session";
+  togglePinSession.hidden=!sessionTarget;
+  deleteSessionButton.hidden=!sessionTarget;
   if(messageTarget){
     togglePinMessage.disabled=!target.id;
     togglePinMessage.textContent=target.id ? (target.is_pinned?"📌 Unpin message":"📌 Pin message") : "⌛ กำลังซิงก์ข้อความ…";
   }
+  if(sessionTarget) togglePinSession.textContent=target.is_pinned?"📌 Unpin SESSION":"📌 Pin SESSION";
   messageContextMenu.hidden=false;
   const margin=8, box=messageContextMenu.getBoundingClientRect();
   messageContextMenu.style.left=Math.max(margin, Math.min(event.clientX, window.innerWidth-box.width-margin))+"px";
@@ -1670,9 +1674,9 @@ function renderSessionList(rows){
   const ordered=sessionStore ? [...rows].sort(sessionStore.compareSessions) : rows;
   ordered.forEach(row=>{
     const item=document.createElement("button"); item.type="button"; item.className="hist-item session-item"+(row.id===activeConversationId?" active":"");
-    item.innerHTML='<span class="dotc">◌</span><span class="txt">'+esc(row.title||"แชทใหม่")+'</span>';
+    item.innerHTML='<span class="dotc">'+(row.is_pinned?"📌":"◌")+'</span><span class="txt">'+esc(row.title||"แชทใหม่")+'</span>';
     item.onclick=()=>selectSession(row.id);
-    item.addEventListener("contextmenu", event=>openContextMenu({kind:"session", id:row.id, title:row.title||"แชทใหม่"}, event));
+    item.addEventListener("contextmenu", event=>openContextMenu({kind:"session", id:row.id, title:row.title||"แชทใหม่", is_pinned:Boolean(row.is_pinned)}, event));
     list.appendChild(item);
   });
   if(!rows.length){ const empty=document.createElement("div"); empty.className="hist-sec"; empty.textContent="ยังไม่มี SESSION"; list.appendChild(empty); }
@@ -1710,6 +1714,15 @@ togglePinMessage.addEventListener("click", async()=>{
     const data=await res.json(); if(!res.ok) throw new Error(data.error||"บันทึกการปักหมุดไม่สำเร็จ");
     setMessagePinVisual(current.element,next); await syncConversationOnce({reset:false});
   }catch(error){ toast(error.message||"บันทึกการปักหมุดไม่สำเร็จ", "err"); }
+});
+togglePinSession.addEventListener("click", async()=>{
+  const current=contextTarget; if(!current || current.kind!=="session" || !current.id) return;
+  const next=!current.is_pinned; closeMessageContextMenu();
+  try{
+    const res=await fetch("/api/conversations/"+encodeURIComponent(current.id)+"/pin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({is_pinned:next})});
+    const data=await res.json(); if(!res.ok) throw new Error(data.error||"บันทึกการปักหมุด SESSION ไม่สำเร็จ");
+    await refreshSessions({load:false}); toast(next?"ปักหมุด SESSION แล้ว":"ยกเลิกการปักหมุด SESSION แล้ว", "ok");
+  }catch(error){ toast(error.message||"บันทึกการปักหมุด SESSION ไม่สำเร็จ", "err"); }
 });
 async function deleteSession(id, title){
   if(!id || !window.confirm("ลบ SESSION ‘"+(title||"แชทใหม่")+"’ และข้อความทั้งหมดในนี้หรือไม่?")) return;
