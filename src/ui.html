@@ -406,7 +406,15 @@
   .hist-sec { padding: 12px 14px 4px; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
   .hist-head .session-new { margin-left: auto; border: 1px solid var(--border); border-radius: 7px; background: var(--panel2); color: var(--text); padding: 4px 7px; font: inherit; font-size: 11px; cursor: pointer; }
   .hist-head .session-new:hover, .hist-item.active { border-color: var(--accent); background: rgba(139,108,246,.16); color: var(--text); }
-  .session-item { border: 1px solid transparent; }
+  .session-item {
+    border: 1px solid rgba(170, 127, 255, .18);
+    background: rgba(30, 20, 48, .78);
+    color: #e9ddff;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+  }
+  .session-item:hover { background: rgba(57, 37, 84, .82); border-color: rgba(180, 139, 255, .42); }
+  .hist-item.session-item.active { background: linear-gradient(135deg, rgba(113, 69, 177, .7), rgba(53, 34, 83, .9)); border-color: rgba(190, 151, 255, .7); color: #fff; }
+  .session-item .dotc { color: #ba91ff; }
   #pinnedMessages { margin: 0 0 14px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px; background: rgba(139,108,246,.08); }
   #pinnedMessages[hidden] { display: none; }
   .pinned-title { font-size: 11px; color: var(--accent2); font-weight: 700; margin-bottom: 5px; }
@@ -1390,6 +1398,7 @@ const updateInstall = document.getElementById("updateInstall");
 const updateNotes = document.getElementById("updateNotes");
 const updateNotesText = document.getElementById("updateNotesText");
 const updateNotesLink = document.getElementById("updateNotesLink");
+let updateProgressSample = null;
 function updateSize(bytes){
   if (!Number.isFinite(bytes) || bytes < 0) return "";
   if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
@@ -1398,7 +1407,7 @@ function updateSize(bytes){
 function renderUpdate(s){
   const active = s && ["available", "downloading", "ready", "error"].includes(s.state);
   updateNotice.hidden = !active;
-  if (!active) return;
+  if (!active) { updateProgressSample = null; return; }
   updateDownload.hidden = s.state !== "available";
   updateInstall.hidden = s.state !== "ready";
   updateDownload.disabled = s.state === "downloading";
@@ -1416,9 +1425,24 @@ function renderUpdate(s){
     const detail = Number.isFinite(s.total) ? " · " + updateSize(s.downloaded || 0) + " / " + updateSize(s.total) : "";
     const retry = Number(s.retry || 0);
     const retryText = retry > 0 ? " · กำลังลองใหม่ครั้ง " + (retry + 1) + "/3" : "";
-    updateText.textContent = "กำลังดาวน์โหลดอัปเดต" + (Number.isFinite(s.percent) ? " " + s.percent + "%" : "") + detail + retryText;
+    const now = Date.now();
+    const downloaded = Number(s.downloaded || 0);
+    let transferText = "";
+    if (updateProgressSample && downloaded >= updateProgressSample.downloaded) {
+      const elapsed = now - updateProgressSample.at;
+      const rate = elapsed > 0 ? (downloaded - updateProgressSample.downloaded) * 1000 / elapsed : 0;
+      if (rate >= 1024) {
+        transferText = " · " + updateSize(rate) + "/s";
+        if (Number.isFinite(s.total) && s.total > downloaded) {
+          const seconds = Math.ceil((s.total - downloaded) / rate);
+          if (seconds < 3600) transferText += " · เหลือประมาณ " + (seconds >= 60 ? Math.ceil(seconds / 60) + " นาที" : seconds + " วินาที");
+        }
+      }
+    }
+    updateProgressSample = { downloaded, at: now };
+    updateText.textContent = "กำลังดาวน์โหลดอัปเดต" + (Number.isFinite(s.percent) ? " " + s.percent + "%" : "") + detail + transferText + retryText;
     updateProgressFill.style.width = Number.isFinite(s.percent) ? s.percent + "%" : "";
-  }
+  } else updateProgressSample = null;
   if (s.state === "ready") updateText.textContent = "ดาวน์โหลดอัปเดตแล้ว — ติดตั้งได้ทันที";
   if (s.state === "error") updateText.textContent = "อัปเดตไม่สำเร็จ: " + (s.message || "ไม่ทราบสาเหตุ");
 }

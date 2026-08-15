@@ -5,12 +5,18 @@ use std::io::Read;
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 const RELEASE_URL: &str = "https://api.github.com/repos/RhysRz/commandblock-web/releases/latest";
 const PACKAGE: &str = "CommandBlock-Windows-x64.zip";
 const CHECKSUM: &str = "CommandBlock-Windows-x64.zip.sha256";
+// GitHub can throttle one transfer heavily. Split release archives into a
+// small, bounded number of HTTP ranges, while retaining the sequential path
+// as a compatibility fallback for CDNs that do not support Range requests.
+const PARALLEL_DOWNLOADS: usize = 4;
+const PARALLEL_DOWNLOAD_MIN_BYTES: u64 = 512 * 1024;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -67,12 +73,9 @@ pub fn release_is_newer(
     if build_matches_tag(tag, current_build) {
         return false;
     }
-    time::OffsetDateTime::parse(
-        published_at,
-        &time::format_description::well_known::Rfc3339,
-    )
-    .map(|published| published.unix_timestamp() > current_timestamp)
-    .unwrap_or(false)
+    time::OffsetDateTime::parse(published_at, &time::format_description::well_known::Rfc3339)
+        .map(|published| published.unix_timestamp() > current_timestamp)
+        .unwrap_or(false)
 }
 
 pub fn check_for_update_async() {
@@ -264,7 +267,11 @@ fn stage_release(release: &Release) -> Result<(), String> {
     }
     std::fs::create_dir_all(&stage).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|e| e.to_string())?;
-    for name in ["Commandblock.exe", "commandblock-connector.exe", "commandblock-updater.exe"] {
+    for name in [
+        "Commandblock.exe",
+        "commandblock-connector.exe",
+        "commandblock-updater.exe",
+    ] {
         let mut entry = zip.by_name(name).map_err(|_| format!("แพ็กเกจไม่มี {name}"))?;
         let mut out = std::fs::File::create(stage.join(name)).map_err(|e| e.to_string())?;
         std::io::copy(&mut entry, &mut out).map_err(|e| e.to_string())?;
@@ -274,6 +281,15 @@ fn stage_release(release: &Release) -> Result<(), String> {
 }
 
 fn read_package_with_progress(release: &Release) -> Result<Vec<u8>, String> {
+    if let Some(total) = release
+        .package_size
+        .filter(|size| *size >= PARALLEL_DOWNLOAD_MIN_BYTES)
+    {
+        if let Ok(bytes) = read_package_parallel(release, total) {
+            return Ok(bytes);
+        }
+    }
+
     let mut out = Vec::new();
     let mut total = release.package_size;
     let mut last_error = String::new();
@@ -295,13 +311,8 @@ fn read_package_with_progress(release: &Release) -> Result<Vec<u8>, String> {
             }
         }
     }
-    let primary_error = format!(
-        "ดาวน์โหลดอัปเดตไม่สำเร็จหลังลองใหม่ 3 ครั้ง: {last_error}"
-    );
-    choose_download_result(
-        || Err(primary_error),
-        || read_package_with_curl(release),
-    )
+    let primary_error = format!("ดาวน์โหลดอัปเดตไม่สำเร็จหลังลองใหม่ 3 ครั้ง: {last_error}");
+    choose_download_result(|| Err(primary_error), || read_package_with_curl(release))
 }
 
 fn read_package_attempt(
@@ -416,7 +427,9 @@ fn read_package_with_curl(release: &Release) -> Result<Vec<u8>, String> {
         .arg(&release.package_url);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
-    let output = command.output().map_err(|error| format!("เรียก Windows curl ไม่ได้: {error}"))?;
+    let output = command
+        .output()
+        .map_err(|error| format!("เรียก Windows curl ไม่ได้: {error}"))?;
     let result = (|| {
         if !output.status.success() {
             let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -457,7 +470,7 @@ fn updates_dir() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_matches_tag, progress_percent, release_is_newer};
+    use super::{build_matches_tag, parallel_ranges, progress_percent, release_is_newer};
 
     #[test]
     fn only_the_same_release_build_is_considered_current() {
@@ -534,6 +547,13 @@ mod tests {
     }
 
     #[test]
+    fn parallel_ranges_cover_each_byte_once() {
+        assert_eq!(parallel_ranges(10, 4), vec![(0, 2), (3, 5), (6, 8), (9, 9)]);
+        assert_eq!(parallel_ranges(3, 4), vec![(0, 0), (1, 1), (2, 2)]);
+        assert!(parallel_ranges(0, 4).is_empty());
+    }
+
+    #[test]
     fn incomplete_release_assets_are_not_offered_for_update() {
         let release = serde_json::json!({
             "draft": false,
@@ -558,6 +578,120 @@ mod tests {
         });
         assert!(super::release_assets_ready(&release));
     }
+}
+
+fn read_package_parallel(release: &Release, total: u64) -> Result<Vec<u8>, String> {
+    let ranges = parallel_ranges(total, PARALLEL_DOWNLOADS);
+    if ranges.len() < 2 {
+        return Err("ไฟล์อัปเดตเล็กเกินกว่าจะแบ่งดาวน์โหลด".to_string());
+    }
+
+    let downloaded = Arc::new(AtomicU64::new(0));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let mut workers = Vec::with_capacity(ranges.len());
+
+    for (index, (start, end)) in ranges.into_iter().enumerate() {
+        let sender = sender.clone();
+        let package_url = release.package_url.clone();
+        let tag = release.tag.clone();
+        let downloaded = Arc::clone(&downloaded);
+        workers.push(std::thread::spawn(move || {
+            let result = read_package_range(&package_url, &tag, total, start, end, downloaded);
+            let _ = sender.send((index, result));
+        }));
+    }
+    drop(sender);
+
+    let mut chunks = (0..workers.len())
+        .map(|_| None)
+        .collect::<Vec<Option<Vec<u8>>>>();
+    for worker in workers {
+        worker
+            .join()
+            .map_err(|_| "ตัวดาวน์โหลดอัปเดตหยุดทำงานกะทันหัน".to_string())?;
+    }
+    for _ in 0..chunks.len() {
+        let (index, result) = receiver
+            .recv()
+            .map_err(|_| "ไม่ได้รับข้อมูลจากตัวดาวน์โหลดอัปเดต".to_string())?;
+        chunks[index] = Some(result?);
+    }
+
+    let mut out = Vec::with_capacity(total as usize);
+    for chunk in chunks {
+        out.extend(chunk.ok_or("ข้อมูลดาวน์โหลดอัปเดตไม่ครบ")?);
+    }
+    if out.len() as u64 != total {
+        return Err(format!(
+            "ดาวน์โหลดอัปเดตไม่ครบ: ได้ {} bytes แต่ควรเป็น {total} bytes",
+            out.len()
+        ));
+    }
+    Ok(out)
+}
+
+fn read_package_range(
+    package_url: &str,
+    tag: &str,
+    total: u64,
+    start: u64,
+    end: u64,
+    downloaded: Arc<AtomicU64>,
+) -> Result<Vec<u8>, String> {
+    let response = ureq::get(package_url)
+        .set("User-Agent", "CommandBlock-Updater")
+        .set("Range", &format!("bytes={start}-{end}"))
+        .call()
+        .map_err(|error| error.to_string())?;
+    if response.status() != 206 {
+        return Err(format!(
+            "เซิร์ฟเวอร์ไม่รองรับการดาวน์โหลดแบบแบ่งช่วง (HTTP {})",
+            response.status()
+        ));
+    }
+
+    let expected = end.saturating_sub(start).saturating_add(1) as usize;
+    let mut out = Vec::with_capacity(expected);
+    let mut reader = response.into_reader();
+    let mut buffer = [0u8; 32 * 1024];
+    loop {
+        let count = reader
+            .read(&mut buffer)
+            .map_err(|error| error.to_string())?;
+        if count == 0 {
+            break;
+        }
+        out.extend_from_slice(&buffer[..count]);
+        let current = downloaded.fetch_add(count as u64, Ordering::Relaxed) + count as u64;
+        set_status(UpdateStatus::Downloading {
+            tag: tag.to_string(),
+            downloaded: current,
+            total: Some(total),
+            retry: 0,
+        });
+    }
+    if out.len() != expected {
+        return Err(format!(
+            "ช่วงดาวน์โหลด {start}-{end} ไม่ครบ: ได้ {} bytes",
+            out.len()
+        ));
+    }
+    Ok(out)
+}
+
+fn parallel_ranges(total: u64, parts: usize) -> Vec<(u64, u64)> {
+    if total == 0 || parts == 0 {
+        return Vec::new();
+    }
+    let count = (parts as u64).min(total);
+    let width = total.saturating_add(count - 1) / count;
+    (0..count)
+        .map(|index| {
+            let start = index * width;
+            let end = start.saturating_add(width - 1).min(total - 1);
+            (start, end)
+        })
+        .collect()
 }
 
 fn release_assets_ready(release: &Value) -> bool {

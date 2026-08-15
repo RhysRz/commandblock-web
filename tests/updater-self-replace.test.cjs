@@ -23,3 +23,10 @@ test('updater retries a stalled CDN transfer and resumes it with HTTP Range', ()
   assert.match(update, /\.set\("Range"/);
   assert.match(update, /retry_delay/);
 });
+
+test('updater splits large release downloads into bounded parallel range requests', () => {
+  const update = fs.readFileSync(path.join(__dirname, '..', 'src', 'update.rs'), 'utf8');
+  assert.match(update, /const PARALLEL_DOWNLOADS: usize = 4/);
+  assert.match(update, /fn read_package_parallel/);
+  assert.match(update, /bytes=\{start\}-\{end\}/);
+});
