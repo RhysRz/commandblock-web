@@ -1234,6 +1234,22 @@ fn handle(
                 }
             }
         }
+        ("POST", "/api/auth/recover") => {
+            let email = shared
+                .lock()
+                .unwrap()
+                .account
+                .as_ref()
+                .map(|account| account.email.clone());
+            let Some(email) = email else {
+                respond(&mut out, 401, "application/json", json!({"ok": false, "error": "กรุณาเข้าสู่ระบบก่อน"}).to_string().as_bytes());
+                return;
+            };
+            match auth::send_password_recovery(agent, &email) {
+                Ok(()) => respond(&mut out, 200, "application/json", json!({"ok": true}).to_string().as_bytes()),
+                Err(error) => respond(&mut out, 400, "application/json", json!({"ok": false, "error": error}).to_string().as_bytes()),
+            }
+        }
         ("POST", "/api/auth/logout") => {
             let _ = auth::sign_out();
             switch_account(agent, &shared, None);

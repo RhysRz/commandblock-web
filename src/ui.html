@@ -427,7 +427,7 @@
   .msg.pinned-focus .bubble { box-shadow:0 0 0 2px rgba(193,150,255,.88), 0 0 28px rgba(139,108,246,.38); animation:pinned-focus 1.4s ease-out; }
   @keyframes pinned-focus { 0% { transform:scale(.985); } 35% { transform:scale(1.01); } 100% { transform:scale(1); } }
   .message-pin { margin-left: 6px; color: var(--accent2); font-size: 11px; }
-  .plugin-modal-card { width:min(920px,94vw); background:#100b1b; }
+  .plugin-modal-card { width:min(980px,94vw); background:#100b1b; }
   .plugin-modal-body { padding:20px; }
   .plugin-subtitle { color:var(--muted); font-size:13px; margin-top:-5px; margin-bottom:18px; }
   .plugin-tabs { display:flex; gap:6px; margin-bottom:14px; }
@@ -440,15 +440,16 @@
   .plugin-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-top:10px; }
   .plugin-card { display:grid; grid-template-columns:36px minmax(0,1fr) auto; gap:10px; align-items:center; padding:10px; min-width:0; border:1px solid rgba(180,139,255,.16); border-radius:10px; background:rgba(255,255,255,.025); }
   .plugin-card:hover { border-color:rgba(180,139,255,.45); background:rgba(139,108,246,.08); }
-  .plugin-icon { width:36px; height:36px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.11); border-radius:9px; background:linear-gradient(135deg,rgba(139,108,246,.42),rgba(44,25,74,.9)); color:#fff; font-size:17px; }
+  .plugin-icon { width:36px; height:36px; display:grid; place-items:center; overflow:hidden; border:1px solid rgba(255,255,255,.11); border-radius:9px; background:linear-gradient(135deg,rgba(139,108,246,.42),rgba(44,25,74,.9)); color:#fff; font-size:17px; }
+  .plugin-icon svg { display:block; width:100%; height:100%; }
   .plugin-copy { min-width:0; }
   .plugin-name { color:#fbf9ff; font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .plugin-desc { color:var(--muted); font-size:11px; line-height:1.35; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .plugin-state { white-space:nowrap; border:1px solid rgba(180,139,255,.28); border-radius:999px; color:#d9c7ff; background:rgba(139,108,246,.11); font-size:10px; padding:4px 7px; }
+  .plugin-desc { color:var(--muted); font-size:11px; line-height:1.35; margin-top:2px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .plugin-state { white-space:nowrap; flex-shrink:0; border:1px solid rgba(180,139,255,.28); border-radius:999px; color:#d9c7ff; background:rgba(139,108,246,.11); font-size:10px; padding:4px 7px; }
   .plugin-state.built-in { color:#aef0d1; border-color:rgba(86,209,144,.36); background:rgba(86,209,144,.1); }
   .plugin-state.planned { color:#c9b8dc; border-color:rgba(201,184,220,.21); background:rgba(201,184,220,.06); }
   .plugin-empty { padding:24px 8px; color:var(--muted); text-align:center; font-size:12px; }
-  @media (max-width:640px) { .plugin-modal-card { width:100vw; max-height:100vh; height:100vh; border-radius:0; } .plugin-grid { grid-template-columns:1fr; } .plugin-modal-body { padding:14px; } }
+  @media (max-width:640px) { .plugin-modal-card { width:100vw; max-height:100vh; height:100vh; border-radius:0; } .plugin-grid { grid-template-columns:1fr; } .plugin-modal-body { padding:14px; } .account-menu { position:fixed; right:12px; left:12px; bottom:calc(env(safe-area-inset-bottom, 0px) + 12px); width:auto; } }
   #messageContextMenu { position: fixed; z-index: 10040; min-width: 182px; padding: 6px; border: 1px solid rgba(180, 139, 255, .52); border-radius: 11px; background: #120b20; box-shadow: 0 18px 48px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.05); }
   #messageContextMenu button { width: 100%; border: 0; border-radius: 7px; background: transparent; color: #eee5ff; padding: 9px 11px; text-align: left; font: 12px inherit; cursor: pointer; }
   #messageContextMenu button:hover { background: rgba(151, 93, 245, .2); }
@@ -936,7 +937,23 @@
     color: var(--muted); font-size: 12px; padding: 3px 10px;
     border: 1px solid rgba(255, 255, 255, .08); border-radius: 999px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    background: rgba(255,255,255,.025); font:inherit; cursor:pointer;
   }
+  .accchip:hover, .accchip[aria-expanded="true"] { color:#f1eaff; border-color:rgba(188,149,255,.52); background:rgba(139,108,246,.13); }
+  .accountwrap { position:relative; display:inline-flex; min-width:0; }
+  .account-menu { position:absolute; right:0; bottom:calc(100% + 9px); z-index:10030; width:300px; padding:8px; border:1px solid rgba(180,139,255,.44); border-radius:14px; background:rgba(18,11,32,.98); box-shadow:0 20px 56px rgba(0,0,0,.56), inset 0 1px rgba(255,255,255,.07); backdrop-filter:blur(18px); }
+  .account-menu[hidden] { display:none; }
+  .account-menu-head { padding:8px 9px 10px; border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:5px; }
+  .account-menu-name { color:#fbf9ff; font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .account-menu-email { color:var(--muted); font-size:11px; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .account-menu button { display:flex; align-items:center; gap:9px; width:100%; border:0; border-radius:8px; background:transparent; color:#e7ddf9; padding:9px 10px; text-align:left; font:12px inherit; cursor:pointer; }
+  .account-menu button:hover { background:rgba(139,108,246,.17); }
+  .account-menu .account-danger { margin-top:5px; border-top:1px solid rgba(255,255,255,.08); padding-top:10px; color:#ffbdd0; }
+  .account-menu .account-danger:hover { background:rgba(196,67,112,.16); }
+  .account-profile-body { display:grid; gap:9px; padding:20px; }
+  .account-profile-body label { color:var(--muted); font-size:12px; }
+  .account-profile-body input { width:100%; border:1px solid rgba(180,139,255,.28); border-radius:9px; background:rgba(255,255,255,.04); color:var(--text); font:inherit; padding:10px; outline:none; }
+  .account-profile-body input:focus { border-color:var(--accent2); box-shadow:0 0 0 3px rgba(139,108,246,.14); }
 
   /* ============ MOBILE (จอเล็ก ≤ 900px) ============ */
   .mob-close { display: none; }
@@ -1138,7 +1155,17 @@
         <select id="mobileModelSelect" aria-label="เลือกโมเดล" disabled><option>กำลังโหลดโมเดล…</option></select>
       </span>
       <span class="sp"></span>
-      <span class="accchip" id="accChip" title="บัญชีที่ล็อกอิน" hidden>👤 <span id="accEmail"></span></span>
+      <span class="accountwrap" id="accountWrap" hidden>
+        <button class="accchip" id="accChip" type="button" title="จัดการบัญชี" aria-expanded="false">👤 <span id="accEmail"></span></button>
+        <section class="account-menu" id="accountMenu" role="menu" aria-label="จัดการบัญชี" hidden>
+          <div class="account-menu-head"><div class="account-menu-name" id="accountMenuName"></div><div class="account-menu-email" id="accountMenuEmail"></div></div>
+          <button id="accountManageBtn" type="button" role="menuitem">👤 จัดการบัญชี</button>
+          <button id="accountDevicesBtn" type="button" role="menuitem">🖥 อุปกรณ์ที่เชื่อมต่อ</button>
+          <button id="accountUsageBtn" type="button" role="menuitem">💳 การใช้งานและเครดิต</button>
+          <button id="accountResetPasswordBtn" type="button" role="menuitem">✉ ส่งอีเมลเปลี่ยนรหัสผ่าน</button>
+          <button class="account-danger" id="accountSignOutBtn" type="button" role="menuitem">↪ ออกจากระบบ</button>
+        </section>
+      </span>
       <span class="usagebar" aria-label="เครดิตและ token">
         <button id="usageCredit" title="ตั้งยอดเครดิต DeepSeek">💳 $0.00 · ≈ ฿0</button>
         <button id="usageTopUp" title="เปิด DeepSeek Platform">+ เติมเงิน</button>
@@ -1251,6 +1278,15 @@ const authSub = document.getElementById("authSub");
 const authEye = document.getElementById("authEye");
 let authMode = "login";
 let authBusy = false;
+let currentAccountEmail = "";
+const accountWrap = document.getElementById("accountWrap");
+const accChip = document.getElementById("accChip");
+const accountMenu = document.getElementById("accountMenu");
+const accountMenuName = document.getElementById("accountMenuName");
+const accountMenuEmail = document.getElementById("accountMenuEmail");
+const accountProfileModal = document.getElementById("accountProfileModal");
+const accountDisplayName = document.getElementById("accountDisplayName");
+const accountProfileEmail = document.getElementById("accountProfileEmail");
 
 function authShowError(msg){ authErr.textContent = msg || ""; authErr.hidden = !msg; }
 function setAuthMode(mode){
@@ -1314,20 +1350,57 @@ function showAuthScreen(){
 }
 document.getElementById("authSkip").addEventListener("click", () => { enterApp(null); });
 
+function accountNameKey(){ return "commandblock.account-name." + currentAccountEmail.toLowerCase(); }
+function getAccountDisplayName(){ return currentAccountEmail ? (localStorage.getItem(accountNameKey()) || currentAccountEmail.split("@")[0]) : ""; }
+function renderAccountIdentity(){
+  const name=getAccountDisplayName();
+  document.getElementById("accEmail").textContent=name;
+  accountMenuName.textContent=name;
+  accountMenuEmail.textContent=currentAccountEmail;
+  accChip.title="จัดการบัญชี: " + currentAccountEmail;
+}
+function setAccountMenuOpen(open){
+  if(!currentAccountEmail) return;
+  accountMenu.hidden=!open;
+  accChip.setAttribute("aria-expanded", String(open));
+}
+function closeAccountProfile(){ accountProfileModal.hidden=true; }
+function openAccountProfile(){
+  if(!currentAccountEmail) return;
+  setAccountMenuOpen(false);
+  accountDisplayName.value=getAccountDisplayName();
+  accountProfileEmail.textContent="ล็อกอินด้วย " + currentAccountEmail + " · ชื่อนี้เก็บเฉพาะเครื่องนี้";
+  accountProfileModal.hidden=false;
+  setTimeout(()=>accountDisplayName.focus(),0);
+}
+async function signOutCurrentAccount(){
+  setAccountMenuOpen(false);
+  const confirmed=await confirmAction({
+    title:"ออกจากระบบ?",
+    message:"ข้อมูลของบัญชีนี้ยังเก็บอยู่บนเครื่อง แต่ต้องลงชื่อเข้าใช้อีกครั้งเพื่อซิงก์",
+    confirmLabel:"ออกจากระบบ",
+    danger:true,
+  });
+  if(!confirmed) return;
+  stopConversationSync();
+  try { await fetch("/api/auth/logout", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" }); } catch (_) {}
+  location.reload();
+}
 function showAccount(email){
-  const chip = document.getElementById("accChip");
   const desc = document.getElementById("accountDesc");
   const loginBtn = document.getElementById("accountLogin");
   const logoutBtn = document.getElementById("accountLogout");
   if (email) {
-    chip.hidden = false;
-    document.getElementById("accEmail").textContent = email;
-    chip.title = "บัญชี: " + email;
+    currentAccountEmail=email;
+    accountWrap.hidden = false;
+    renderAccountIdentity();
     desc.textContent = "ล็อกอินด้วย " + email + " — ประวัติแชทและโน้ตแยกเก็บต่อบัญชีบนเครื่องนี้";
     loginBtn.hidden = true;
     logoutBtn.hidden = false;
   } else {
-    chip.hidden = true;
+    currentAccountEmail="";
+    setAccountMenuOpen(false);
+    accountWrap.hidden = true;
     desc.textContent = "ยังไม่ได้เข้าสู่ระบบ (แบบไม่ระบุตัวตน) — ข้อมูลเก็บในเครื่องแบบเดิม";
     loginBtn.hidden = false;
     logoutBtn.hidden = true;
@@ -2481,6 +2554,14 @@ document.getElementById("fb").addEventListener("click",()=>{
   </div>
 </div>
 
+<div class="modal" id="accountProfileModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="accountProfileTitle">
+    <div class="modal-head"><span class="modal-title" id="accountProfileTitle">จัดการบัญชี</span><button class="modal-x" id="accountProfileX" type="button" title="ปิด">✕</button></div>
+    <div class="account-profile-body"><label for="accountDisplayName">ชื่อที่แสดง</label><input id="accountDisplayName" maxlength="60" autocomplete="name" placeholder="ชื่อของคุณ"><div class="set-desc" id="accountProfileEmail"></div></div>
+    <div class="modal-foot"><span></span><span class="set-actions"><button class="btn-cancel" id="accountProfileCancel" type="button">ยกเลิก</button><button class="btn-save" id="accountProfileSave" type="button">บันทึก</button></span></div>
+  </div>
+</div>
+
 <div class="modal" id="confirmModal" hidden>
   <div class="modal-card confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
     <div class="modal-head"><span class="modal-title" id="confirmTitle">ยืนยันการทำรายการ</span></div>
@@ -2539,6 +2620,27 @@ const pluginsBtn = document.getElementById("pluginsBtn");
 const pluginCatalogList = document.getElementById("pluginCatalogList");
 const pluginSearch = document.getElementById("pluginSearch");
 let pluginCatalogMode = "public";
+const PLUGIN_BRAND_MARKS = {
+  "GitHub":["#24292f","#ffffff","GH"], "GitLab":["#fc6d26","#ffffff","GL"], "Base44":["#5b3df5","#ffffff","44"],
+  "Codex Security":["#0b76d1","#ffffff","CS"], "Atlassian Rovo":["#1868db","#ffffff","AR"], "Sentry":["#362d59","#ffffff","S"],
+  "Supabase":["#3ecf8e","#082518","S"], "Neon Postgres":["#00e599","#06342b","N"], "OpenAI Developers":["#10a37f","#ffffff","AI"],
+  "Lovable":["#ff4fa3","#ffffff","L"], "Superpowers":["#7c4dff","#ffffff","✦"], "Figma":["#f24e1e","#ffffff","F"],
+  "Canva":["#00c4cc","#ffffff","C"], "Google Drive":["#4285f4","#ffffff","D"], "Box":["#0061d5","#ffffff","B"],
+  "SharePoint":["#038387","#ffffff","SP"], "Airtable":["#fcb400","#201700","A"], "Asana":["#f06a6a","#ffffff","AS"],
+  "Linear":["#5e6ad2","#ffffff","L"], "Monday.com":["#ff3d57","#ffffff","M"], "Notion":["#111111","#ffffff","N"],
+  "Google Calendar":["#4285f4","#ffffff","31"], "Outlook Calendar":["#0078d4","#ffffff","O"], "Granola":["#e8a951","#291b0b","GR"],
+  "Semrush":["#ff642d","#ffffff","SE"], "Gmail":["#ea4335","#ffffff","M"], "Outlook Email":["#0078d4","#ffffff","O"],
+  "Slack":["#4a154b","#ffffff","S"], "Teams":["#6264a7","#ffffff","T"], "Vercel":["#111111","#ffffff","▲"],
+  "Cloudflare":["#f38020","#ffffff","CF"], "Replit":["#f26207","#ffffff","R"], "Wix":["#0c0c0c","#ffffff","W"],
+  "Stripe":["#635bff","#ffffff","S"], "Apollo.io":["#5e5ce6","#ffffff","AP"], "HubSpot":["#ff7a59","#ffffff","H"],
+  "PostHog":["#f54e00","#ffffff","PH"], "Zotero":["#cc2936","#ffffff","Z"], "Remotion":["#0b1021","#4cf7d2","R"],
+  "HeyGen":["#ff6b36","#ffffff","HG"], "HyperFrames":["#5b6cff","#ffffff","HF"]
+};
+function brandMark(item){
+  const mark=PLUGIN_BRAND_MARKS[item.name];
+  if(!mark) return '<span aria-hidden="true">'+esc(item.icon)+'</span>';
+  return '<svg viewBox="0 0 36 36" role="img" aria-label="'+esc(item.name)+'"><rect width="36" height="36" rx="9" fill="'+mark[0]+'"/><text x="18" y="22" text-anchor="middle" fill="'+mark[1]+'" font-family="Segoe UI,Arial,sans-serif" font-size="'+(mark[2].length>1?"10":"16")+'" font-weight="800">'+esc(mark[2])+'</text></svg>';
+}
 const PLUGIN_CATALOG = [
   {name:"Local workspace",category:"Development",state:"built-in",description:"อ่านและแก้ไฟล์ในโฟลเดอร์โปรเจกต์",icon:"▣"},
   {name:"Terminal",category:"Development",state:"built-in",description:"รันคำสั่งและดูผลลัพธ์ในเครื่อง",icon:"⌘"},
@@ -2601,7 +2703,7 @@ function renderPluginCatalog(query){
     const section=document.createElement("section"); section.className="plugin-section";
     const heading=document.createElement("div"); heading.className="plugin-section-title"; heading.textContent=category; section.appendChild(heading);
     const grid=document.createElement("div"); grid.className="plugin-grid";
-    items.forEach(item=>{ const card=document.createElement("article"); card.className="plugin-card"; card.innerHTML='<span class="plugin-icon">'+esc(item.icon)+'</span><span class="plugin-copy"><span class="plugin-name">'+esc(item.name)+'</span><span class="plugin-desc">'+esc(item.description)+'</span></span><span class="plugin-state '+item.state+'">'+PLUGIN_STATE_LABEL[item.state]+'</span>'; grid.appendChild(card); });
+    items.forEach(item=>{ const card=document.createElement("article"); card.className="plugin-card"; card.innerHTML='<span class="plugin-icon">'+brandMark(item)+'</span><span class="plugin-copy"><span class="plugin-name">'+esc(item.name)+'</span><span class="plugin-desc">'+esc(item.description)+'</span></span><span class="plugin-state '+item.state+'">'+PLUGIN_STATE_LABEL[item.state]+'</span>'; grid.appendChild(card); });
     section.appendChild(grid); pluginCatalogList.appendChild(section);
   });
 }
@@ -2820,19 +2922,48 @@ document.getElementById("accountLogin").addEventListener("click", () => {
   closeSettings();
   showAuthScreen();
 });
-document.getElementById("accountLogout").addEventListener("click", async () => {
-  const confirmed=await confirmAction({
-    title:"ออกจากระบบ?",
-    message:"ข้อมูลของบัญชีนี้ยังเก็บอยู่บนเครื่อง แต่ต้องลงชื่อเข้าใช้อีกครั้งเพื่อซิงก์",
-    confirmLabel:"ออกจากระบบ",
-    danger:false,
-  });
-  if(!confirmed) return;
-  stopConversationSync();
+document.getElementById("accountLogout").addEventListener("click", signOutCurrentAccount);
+accChip.addEventListener("click", () => setAccountMenuOpen(accountMenu.hidden));
+document.getElementById("accountManageBtn").addEventListener("click", openAccountProfile);
+document.getElementById("accountDevicesBtn").addEventListener("click", () => {
+  setAccountMenuOpen(false);
+  switchTab("terminal");
+  document.getElementById("openConnector").focus();
+  toast("อุปกรณ์ที่เชื่อมต่อ: ใช้ Desktop Connector หรือ Remote PC ด้านขวา", "ok");
+});
+document.getElementById("accountUsageBtn").addEventListener("click", () => {
+  setAccountMenuOpen(false);
+  document.getElementById("usageCredit").click();
+});
+document.getElementById("accountResetPasswordBtn").addEventListener("click", async () => {
+  if(!currentAccountEmail) return;
+  const button=document.getElementById("accountResetPasswordBtn");
+  button.disabled=true;
   try {
-    await fetch("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-  } catch (_) {}
-  location.reload();
+    const response=await fetch("/api/auth/recover", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" });
+    const data=await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || "ส่งอีเมลไม่สำเร็จ");
+    toast("ส่งลิงก์เปลี่ยนรหัสผ่านไปที่ " + currentAccountEmail + " แล้ว", "ok");
+    setAccountMenuOpen(false);
+  } catch(error) { toast(error.message || "ส่งอีเมลเปลี่ยนรหัสผ่านไม่สำเร็จ", "err"); }
+  finally { button.disabled=false; }
+});
+document.getElementById("accountSignOutBtn").addEventListener("click", signOutCurrentAccount);
+document.getElementById("accountProfileX").addEventListener("click", closeAccountProfile);
+document.getElementById("accountProfileCancel").addEventListener("click", closeAccountProfile);
+document.getElementById("accountProfileSave").addEventListener("click", () => {
+  const name=accountDisplayName.value.trim().slice(0,60);
+  if(!currentAccountEmail) return;
+  if(name) localStorage.setItem(accountNameKey(), name); else localStorage.removeItem(accountNameKey());
+  renderAccountIdentity();
+  closeAccountProfile();
+  toast("บันทึกชื่อที่แสดงแล้ว", "ok");
+});
+document.addEventListener("pointerdown", event => {
+  if(!accountMenu.hidden && !accountWrap.contains(event.target)) setAccountMenuOpen(false);
+});
+document.addEventListener("keydown", event => {
+  if(event.key === "Escape") { setAccountMenuOpen(false); closeAccountProfile(); }
 });
 </script>
 </body>

@@ -1,6 +1,6 @@
 [package]
 name = "commandblock"
-version = "1.0.9"
+version = "1.0.10"
 edition = "2021"
 description = "Commandblock — ผู้ช่วยพัฒนาโค้ด AI แบบตัวแทน (agentic coding assistant CLI)"
 license = "MIT"

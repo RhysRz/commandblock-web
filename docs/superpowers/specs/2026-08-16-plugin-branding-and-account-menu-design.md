@@ -25,7 +25,9 @@ account menu without changing authentication or provider permissions.
   menu upward from the lower application bar.
 - The menu header shows the current display name when available and email.
 - Provide actions for account management, connected devices, usage and credit,
-  password-reset email, and sign out.  Sign out is visually separated and uses
+  password-reset email, and sign out.  The local GUI route sends the current
+  account's recovery email through Supabase Auth and reports the provider's
+  response; it does not handle or store a replacement password. Sign out is visually separated and uses
   the existing CommandBlock confirmation dialog.
 - Account management opens an in-app modal for the display name; password reset
   uses the existing Supabase auth flow.  Connected devices and usage/credit use
@@ -35,10 +37,12 @@ account menu without changing authentication or provider permissions.
 
 ## Data flow and safety
 
-Logo data is packaged as static assets only.  Account actions operate on the
+Logo data is packaged as static assets only. Account actions operate on the
 current authenticated Supabase user and preserve existing owner-scoped data and
-logout behavior.  Third-party Plugin cards remain descriptive until a real
-integration is configured; logos do not imply that a connector is installed.
+logout behavior. The browser adapter mirrors the recovery-email request for its
+own signed-in Supabase session. Third-party Plugin cards remain descriptive
+until a real integration is configured; logos do not imply that a connector is
+installed.
 
 ## Testing and release
 

@@ -171,6 +171,19 @@ pub fn sign_in(agent: &ureq::Agent, email: &str, password: &str) -> Result<Accou
     Ok(account)
 }
 
+/// ส่งอีเมลลิงก์กู้คืนรหัสผ่านให้บัญชีที่ระบุ โดย Supabase เป็นผู้จัดการ token และอายุลิงก์
+pub fn send_password_recovery(agent: &ureq::Agent, email: &str) -> Result<(), String> {
+    if !valid_email(email) {
+        return Err("อีเมลไม่ถูกต้อง".to_string());
+    }
+    post_json(
+        agent,
+        &format!("{SUPABASE_URL}/auth/v1/recover"),
+        json!({ "email": email.trim() }),
+    )?;
+    Ok(())
+}
+
 /// คู่ token ที่เพิ่ง refresh — ใช้เรียก REST API ของ Supabase ได้ทันที
 #[derive(Clone, Debug)]
 pub struct TokenPair {

@@ -34,3 +34,15 @@ test('plugin catalog includes every currently advertised connector provider', ()
     assert.match(ui, new RegExp(`name:"${provider}"`));
   }
 });
+
+test('plugin catalog uses local colored brand marks and a non-overlapping responsive layout', () => {
+  const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
+
+  assert.match(ui, /const PLUGIN_BRAND_MARKS = \{/);
+  assert.match(ui, /function brandMark\(item\)/);
+  assert.match(ui, /"GitHub":\["#24292f"/);
+  assert.match(ui, /\.plugin-modal-card \{ width:min\(980px,94vw\)/);
+  assert.match(ui, /\.plugin-copy \{ min-width:0/);
+  assert.match(ui, /\.plugin-desc \{[\s\S]*-webkit-line-clamp:2/);
+  assert.match(ui, /@media \(max-width:640px\) \{[\s\S]*\.plugin-grid \{ grid-template-columns:1fr/);
+});

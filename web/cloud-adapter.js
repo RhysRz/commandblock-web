@@ -588,6 +588,12 @@
     conversationId = null;
     return json({ ok: true });
   }
+  async function authRecover() {
+    if (!client || !cloudUser?.email) return json({ ok: false, error: 'กรุณาเข้าสู่ระบบก่อน' }, 401);
+    const { error } = await client.auth.resetPasswordForEmail(cloudUser.email, { redirectTo: location.href });
+    if (error) return json({ ok: false, error: error.message || 'ส่งอีเมลเปลี่ยนรหัสผ่านไม่สำเร็จ' }, 400);
+    return json({ ok: true });
+  }
 
   window.fetch = async (input, init = {}) => {
     // หน่วงหนึ่ง macrotask — ให้สคริปต์หลักของหน้าโหลดเสร็จก่อน (ฟังก์ชัน setFolder/setTodos ฯลฯ)
@@ -598,6 +604,7 @@
     if (path === '/api/auth/login') return authLogin(init);
     if (path === '/api/auth/signup') return authSignup(init);
     if (path === '/api/auth/logout') return authLogout();
+    if (path === '/api/auth/recover') return authRecover();
     if (path === '/api/state') return json(cloudState());
     if (path === '/api/models') return json({ models: [{ name: MODEL, base_url: 'https://api.deepseek.com', source: 'cloud', active: true }] });
     if (path === '/api/model') return json({ ok: true, backend: 'cloud', model: MODEL, base_url: 'https://api.deepseek.com' });
