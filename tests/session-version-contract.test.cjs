@@ -3,9 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-test('the pinned-session release increments the desktop package version', () => {
+test('the plugin-catalog release increments the desktop package version', () => {
   const cargo = fs.readFileSync(path.join(__dirname, '..', 'Cargo.toml'), 'utf8');
-  assert.match(cargo, /^version = "1\.0\.5"$/m);
+  assert.match(cargo, /^version = "1\.0\.6"$/m);
 });
 
 test('SESSION list uses a low-glare obsidian surface instead of white cards', () => {

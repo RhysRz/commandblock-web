@@ -393,7 +393,7 @@
     border-right: 1px solid var(--border);
     background: var(--panel);
   }
-  .hist-head { padding: 12px 14px 8px; font-size: 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+  .hist-head { display:flex; align-items:center; gap:8px; padding: 12px 14px 8px; font-size: 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
   .hist-list { flex: 1; overflow-y: auto; padding: 8px 6px; }
   .hist-item {
     display: flex; gap: 8px; align-items: flex-start;
@@ -415,11 +415,36 @@
   .session-item:hover { background: rgba(57, 37, 84, .82); border-color: rgba(180, 139, 255, .42); }
   .hist-item.session-item.active { background: linear-gradient(135deg, rgba(113, 69, 177, .7), rgba(53, 34, 83, .9)); border-color: rgba(190, 151, 255, .7); color: #fff; }
   .session-item .dotc { color: #ba91ff; }
-  #pinnedMessages { margin: 0 0 14px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px; background: rgba(139,108,246,.08); }
+  #pinnedMessages { position: sticky; top: 0; z-index: 12; margin: 0 0 14px; padding: 9px 10px; border: 1px solid rgba(180,139,255,.42); border-radius: 10px; background: rgba(20,13,35,.94); box-shadow: 0 10px 24px rgba(0,0,0,.26); backdrop-filter: blur(14px); }
   #pinnedMessages[hidden] { display: none; }
   .pinned-title { font-size: 11px; color: var(--accent2); font-weight: 700; margin-bottom: 5px; }
-  .pinned-message { font-size: 12px; color: var(--muted); padding: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pinned-message { display:block; width:100%; border:0; border-radius:6px; background:transparent; text-align:left; font:inherit; font-size:12px; color:var(--muted); padding:4px 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+  .pinned-message:hover, .pinned-message:focus-visible { color:var(--text); background:rgba(139,108,246,.16); outline:none; }
+  .msg.pinned-focus .bubble { box-shadow:0 0 0 2px rgba(193,150,255,.88), 0 0 28px rgba(139,108,246,.38); animation:pinned-focus 1.4s ease-out; }
+  @keyframes pinned-focus { 0% { transform:scale(.985); } 35% { transform:scale(1.01); } 100% { transform:scale(1); } }
   .message-pin { margin-left: 6px; color: var(--accent2); font-size: 11px; }
+  .plugin-modal-card { width:min(920px,94vw); background:#100b1b; }
+  .plugin-modal-body { padding:20px; }
+  .plugin-subtitle { color:var(--muted); font-size:13px; margin-top:-5px; margin-bottom:18px; }
+  .plugin-tabs { display:flex; gap:6px; margin-bottom:14px; }
+  .plugin-tab { border:1px solid transparent; border-radius:7px; background:transparent; color:var(--muted); font:inherit; font-size:12px; padding:6px 10px; cursor:pointer; }
+  .plugin-tab.active { background:rgba(139,108,246,.22); border-color:rgba(180,139,255,.42); color:#f5efff; }
+  .plugin-search { width:100%; border:1px solid rgba(180,139,255,.34); border-radius:999px; background:rgba(255,255,255,.045); color:var(--text); padding:10px 14px; font:13px inherit; outline:none; }
+  .plugin-search:focus { border-color:var(--accent2); box-shadow:0 0 0 3px rgba(139,108,246,.13); }
+  .plugin-section { margin-top:20px; }
+  .plugin-section-title { display:flex; align-items:center; gap:8px; color:#f0e8ff; font-size:13px; font-weight:700; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,.07); }
+  .plugin-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-top:10px; }
+  .plugin-card { display:grid; grid-template-columns:36px minmax(0,1fr) auto; gap:10px; align-items:center; padding:10px; min-width:0; border:1px solid rgba(180,139,255,.16); border-radius:10px; background:rgba(255,255,255,.025); }
+  .plugin-card:hover { border-color:rgba(180,139,255,.45); background:rgba(139,108,246,.08); }
+  .plugin-icon { width:36px; height:36px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.11); border-radius:9px; background:linear-gradient(135deg,rgba(139,108,246,.42),rgba(44,25,74,.9)); color:#fff; font-size:17px; }
+  .plugin-copy { min-width:0; }
+  .plugin-name { color:#fbf9ff; font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .plugin-desc { color:var(--muted); font-size:11px; line-height:1.35; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .plugin-state { white-space:nowrap; border:1px solid rgba(180,139,255,.28); border-radius:999px; color:#d9c7ff; background:rgba(139,108,246,.11); font-size:10px; padding:4px 7px; }
+  .plugin-state.built-in { color:#aef0d1; border-color:rgba(86,209,144,.36); background:rgba(86,209,144,.1); }
+  .plugin-state.planned { color:#c9b8dc; border-color:rgba(201,184,220,.21); background:rgba(201,184,220,.06); }
+  .plugin-empty { padding:24px 8px; color:var(--muted); text-align:center; font-size:12px; }
+  @media (max-width:640px) { .plugin-modal-card { width:100vw; max-height:100vh; height:100vh; border-radius:0; } .plugin-grid { grid-template-columns:1fr; } .plugin-modal-body { padding:14px; } }
   #messageContextMenu { position: fixed; z-index: 10040; min-width: 182px; padding: 6px; border: 1px solid rgba(180, 139, 255, .52); border-radius: 11px; background: #120b20; box-shadow: 0 18px 48px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.05); }
   #messageContextMenu button { width: 100%; border: 0; border-radius: 7px; background: transparent; color: #eee5ff; padding: 9px 11px; text-align: left; font: 12px inherit; cursor: pointer; }
   #messageContextMenu button:hover { background: rgba(151, 93, 245, .2); }
@@ -1047,6 +1072,9 @@
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4 1.5h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1z"/><line x1="5" y1="5.5" x2="11" y2="5.5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="10.5" x2="8.5" y2="10.5"/></svg>
   </button>
   <div class="irail-sep"></div>
+  <button class="irail-btn" id="pluginsBtn" title="Plugins — คอนเน็กเตอร์และความสามารถ">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M6.1 2.1a2.1 2.1 0 1 1 3.8 1.25h2.45a1.7 1.7 0 0 1 1.7 1.7v2.25a2.1 2.1 0 1 0 0 4.2v1.45a1.7 1.7 0 0 1-1.7 1.7H9.9a2.1 2.1 0 1 1-3.8 0H3.65a1.7 1.7 0 0 1-1.7-1.7v-2.2a2.1 2.1 0 1 0 0-4.2V5.05a1.7 1.7 0 0 1 1.7-1.7H6.1"/></svg>
+  </button>
   <button class="irail-btn" id="settingsBtn" title="Project settings — ตั้งค่า + เพิ่มสกิล">
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="1.5" y1="3.5" x2="14.5" y2="3.5"/><line x1="1.5" y1="8" x2="14.5" y2="8"/><line x1="1.5" y1="12.5" x2="14.5" y2="12.5"/><line x1="5" y1="1.5" x2="5" y2="5.5"/><line x1="11" y1="6" x2="11" y2="10"/><line x1="7" y1="10.5" x2="7" y2="14.5"/></svg>
   </button>
@@ -1628,7 +1656,14 @@ function renderPinnedMessages(rows){
   pinnedMessages.replaceChildren();
   if(!pins.length) return;
   const title=document.createElement("div"); title.className="pinned-title"; title.textContent="📌 Pinned messages"; pinnedMessages.appendChild(title);
-  pins.forEach(row=>{ const item=document.createElement("div"); item.className="pinned-message"; item.textContent=(row.role==="user"?"คุณ: ":"AI: ")+row.content; pinnedMessages.appendChild(item); });
+  pins.forEach(row=>{ const item=document.createElement("button"); item.type="button"; item.className="pinned-message"; item.title="ไปยังข้อความที่ปักหมุด"; item.textContent=(row.role==="user"?"คุณ: ":"AI: ")+row.content; item.addEventListener("click",()=>scrollToPinnedMessage(row.id)); pinnedMessages.appendChild(item); });
+}
+function scrollToPinnedMessage(messageId){
+  const message=wrap.querySelector('.msg[data-conversation-id="'+CSS.escape(messageId)+'"]');
+  if(!message) return;
+  message.scrollIntoView({behavior:"smooth",block:"center"});
+  message.classList.add("pinned-focus");
+  window.setTimeout(()=>message.classList.remove("pinned-focus"),1400);
 }
 function bindMessageContextMenu(el){
   if(el.dataset.contextBound) return;
@@ -2401,6 +2436,18 @@ document.getElementById("fb").addEventListener("click",()=>{
   </div>
 </div>
 
+<div class="modal" id="pluginCatalog" hidden>
+  <div class="modal-card plugin-modal-card" role="dialog" aria-modal="true" aria-labelledby="pluginCatalogTitle">
+    <div class="modal-head"><span class="modal-title" id="pluginCatalogTitle">Plugins</span><button class="modal-x" id="pluginCatalogX" title="ปิด">✕</button></div>
+    <div class="modal-body plugin-modal-body">
+      <div class="plugin-subtitle">ความสามารถและคอนเน็กเตอร์สำหรับ CommandBlock</div>
+      <div class="plugin-tabs" role="tablist"><button class="plugin-tab active" type="button" data-plugin-mode="public">Public</button><button class="plugin-tab" type="button" data-plugin-mode="installed">Installed</button></div>
+      <input class="plugin-search" id="pluginSearch" type="search" placeholder="ค้นหา plugins และ connectors…" autocomplete="off">
+      <div id="pluginCatalogList"></div>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -2446,6 +2493,84 @@ folderBtn.addEventListener("click", async ()=>{
 /* ---------- Project settings (ตั้งค่า + เพิ่มสกิล) ---------- */
 const settingsModal = document.getElementById("settingsModal");
 const settingsBtn = document.getElementById("settingsBtn");
+const pluginCatalog = document.getElementById("pluginCatalog");
+const pluginsBtn = document.getElementById("pluginsBtn");
+const pluginCatalogList = document.getElementById("pluginCatalogList");
+const pluginSearch = document.getElementById("pluginSearch");
+let pluginCatalogMode = "public";
+const PLUGIN_CATALOG = [
+  {name:"Local workspace",category:"Development",state:"built-in",description:"อ่านและแก้ไฟล์ในโฟลเดอร์โปรเจกต์",icon:"▣"},
+  {name:"Terminal",category:"Development",state:"built-in",description:"รันคำสั่งและดูผลลัพธ์ในเครื่อง",icon:"⌘"},
+  {name:"GitHub",category:"Development",state:"connect-required",description:"Repos, issues, pull requests และ Actions",icon:"GH"},
+  {name:"GitLab",category:"Development",state:"connect-required",description:"โค้ด, merge requests และ CI",icon:"GL"},
+  {name:"Base44",category:"Development",state:"connect-required",description:"สร้างและจัดการแอปจากแนวคิด",icon:"44"},
+  {name:"Codex Security",category:"Development",state:"connect-required",description:"ตรวจช่องโหว่และความปลอดภัยของโค้ด",icon:"CS"},
+  {name:"Atlassian Rovo",category:"Development",state:"connect-required",description:"Jira และ Confluence",icon:"AR"},
+  {name:"Sentry",category:"Development",state:"connect-required",description:"ติดตาม errors และ performance",icon:"S"},
+  {name:"Supabase",category:"Development",state:"connect-required",description:"Database, Auth และ Edge Functions",icon:"⚡"},
+  {name:"Neon Postgres",category:"Development",state:"connect-required",description:"ฐานข้อมูล Postgres บนคลาวด์",icon:"N"},
+  {name:"OpenAI Developers",category:"Development",state:"connect-required",description:"เอกสารและงานพัฒนา OpenAI",icon:"OA"},
+  {name:"Lovable",category:"Development",state:"connect-required",description:"สร้างและพัฒนาเว็บแอป",icon:"♥"},
+  {name:"Superpowers",category:"Development",state:"connect-required",description:"ชุดเครื่องมือและ workflow สำหรับ agent",icon:"✦"},
+  {name:"Figma",category:"Design",state:"connect-required",description:"ไฟล์ออกแบบและ component context",icon:"F"},
+  {name:"Canva",category:"Design",state:"connect-required",description:"สร้างและจัดการงานออกแบบ",icon:"C"},
+  {name:"Google Drive",category:"Storage",state:"connect-required",description:"Drive, Docs และไฟล์ที่แชร์",icon:"△"},
+  {name:"Box",category:"Storage",state:"connect-required",description:"ไฟล์ธุรกิจและโฟลเดอร์ทีม",icon:"B"},
+  {name:"SharePoint",category:"Storage",state:"connect-required",description:"เอกสารและไซต์ของ Microsoft",icon:"SP"},
+  {name:"Airtable",category:"Productivity",state:"connect-required",description:"ฐานข้อมูลงานและตารางทีม",icon:"A"},
+  {name:"Asana",category:"Productivity",state:"connect-required",description:"งาน โปรเจกต์ และเป้าหมาย",icon:"AS"},
+  {name:"Linear",category:"Productivity",state:"connect-required",description:"Issues และ product planning",icon:"L"},
+  {name:"Monday.com",category:"Productivity",state:"connect-required",description:"บอร์ดงานและ workflow",icon:"M"},
+  {name:"Notion",category:"Productivity",state:"connect-required",description:"เอกสาร wiki และ knowledge base",icon:"N"},
+  {name:"Google Calendar",category:"Productivity",state:"connect-required",description:"ปฏิทินและกำหนดการ Google",icon:"GC"},
+  {name:"Outlook Calendar",category:"Productivity",state:"connect-required",description:"ปฏิทิน Microsoft 365",icon:"OC"},
+  {name:"Granola",category:"Productivity",state:"planned",description:"บันทึกและสรุปการประชุม",icon:"GR"},
+  {name:"Semrush",category:"Productivity",state:"planned",description:"ข้อมูลการค้นหาและ SEO",icon:"SE"},
+  {name:"Gmail",category:"Communication",state:"connect-required",description:"อ่านและจัดการอีเมล",icon:"G"},
+  {name:"Outlook Email",category:"Communication",state:"connect-required",description:"อีเมล Microsoft 365",icon:"O"},
+  {name:"Slack",category:"Communication",state:"connect-required",description:"ข้อความและช่องสนทนาทีม",icon:"S"},
+  {name:"Teams",category:"Communication",state:"connect-required",description:"แชทและข้อมูลทีม Microsoft",icon:"T"},
+  {name:"Vercel",category:"Hosting",state:"connect-required",description:"Deploy และดูสถานะเว็บ",icon:"▲"},
+  {name:"Cloudflare",category:"Hosting",state:"connect-required",description:"Workers, Pages และ edge services",icon:"☁"},
+  {name:"Replit",category:"Hosting",state:"connect-required",description:"โปรเจกต์และ runtime บนคลาวด์",icon:"R"},
+  {name:"Wix",category:"Hosting",state:"connect-required",description:"เว็บไซต์และ CMS",icon:"W"},
+  {name:"Stripe",category:"Billing",state:"connect-required",description:"การชำระเงินและ billing",icon:"$"},
+  {name:"Apollo.io",category:"Productivity",state:"planned",description:"ข้อมูลลูกค้าและ sales workflow",icon:"AP"},
+  {name:"HubSpot",category:"Productivity",state:"planned",description:"CRM และ customer operations",icon:"H"},
+  {name:"PostHog",category:"Development",state:"planned",description:"Product analytics และ feature flags",icon:"PH"},
+  {name:"Zotero",category:"Productivity",state:"planned",description:"งานวิจัยและบรรณานุกรม",icon:"Z"},
+  {name:"Remotion",category:"Design",state:"planned",description:"สร้างวิดีโอด้วยโค้ด",icon:"▶"},
+  {name:"HeyGen",category:"Design",state:"planned",description:"สร้างวิดีโอและ avatar",icon:"HG"},
+  {name:"HyperFrames",category:"Design",state:"planned",description:"สร้างวิดีโอจาก HeyGen",icon:"HF"},
+  {name:"Computer Use",category:"Development",state:"built-in",description:"Desktop Connector และเครื่องมือในเครื่อง",icon:"▤"},
+  {name:"Remote PC",category:"Development",state:"built-in",description:"ดูหน้าจอและควบคุมเครื่องที่อนุญาต",icon:"◫"}
+];
+const PLUGIN_STATE_LABEL={"built-in":"Built in","connect-required":"Connect required",planned:"Planned"};
+function renderPluginCatalog(query){
+  const search=String(query||"").trim().toLowerCase();
+  const rows=PLUGIN_CATALOG.filter(item=>{
+    const matches=!search || [item.name,item.category,item.description].join(" ").toLowerCase().includes(search);
+    return matches && (pluginCatalogMode!=="installed" || item.state==="built-in");
+  });
+  pluginCatalogList.replaceChildren();
+  const grouped=new Map();
+  rows.forEach(item=>{ const list=grouped.get(item.category)||[]; list.push(item); grouped.set(item.category,list); });
+  if(!rows.length){ const empty=document.createElement("div"); empty.className="plugin-empty"; empty.textContent="ไม่พบปลั๊กอินที่ตรงกับการค้นหา"; pluginCatalogList.appendChild(empty); return; }
+  grouped.forEach((items,category)=>{
+    const section=document.createElement("section"); section.className="plugin-section";
+    const heading=document.createElement("div"); heading.className="plugin-section-title"; heading.textContent=category; section.appendChild(heading);
+    const grid=document.createElement("div"); grid.className="plugin-grid";
+    items.forEach(item=>{ const card=document.createElement("article"); card.className="plugin-card"; card.innerHTML='<span class="plugin-icon">'+esc(item.icon)+'</span><span class="plugin-copy"><span class="plugin-name">'+esc(item.name)+'</span><span class="plugin-desc">'+esc(item.description)+'</span></span><span class="plugin-state '+item.state+'">'+PLUGIN_STATE_LABEL[item.state]+'</span>'; grid.appendChild(card); });
+    section.appendChild(grid); pluginCatalogList.appendChild(section);
+  });
+}
+function openPluginCatalog(){ pluginCatalog.hidden=false; pluginCatalogMode="public"; pluginSearch.value=""; document.querySelectorAll("[data-plugin-mode]").forEach(button=>button.classList.toggle("active",button.dataset.pluginMode==="public")); renderPluginCatalog(""); pluginSearch.focus(); }
+function closePluginCatalog(){ pluginCatalog.hidden=true; }
+pluginsBtn.addEventListener("click",openPluginCatalog);
+document.getElementById("pluginCatalogX").addEventListener("click",closePluginCatalog);
+pluginCatalog.addEventListener("click",event=>{ if(event.target===pluginCatalog) closePluginCatalog(); });
+pluginSearch.addEventListener("input",event=>renderPluginCatalog(event.target.value));
+document.querySelectorAll("[data-plugin-mode]").forEach(button=>button.addEventListener("click",()=>{ pluginCatalogMode=button.dataset.pluginMode; document.querySelectorAll("[data-plugin-mode]").forEach(item=>item.classList.toggle("active",item===button)); renderPluginCatalog(pluginSearch.value); }));
 let selSkills = new Set();
 let allSkills = [];
 function openSettings(){
@@ -2570,7 +2695,7 @@ document.getElementById("settingsSave").addEventListener("click", async ()=>{
     }
   }catch(e){ toast("เกิดข้อผิดพลาด: " + e, "err"); }
 });
-document.addEventListener("keydown", e=>{ if(e.key === "Escape" && !settingsModal.hidden) closeSettings(); });
+document.addEventListener("keydown", e=>{ if(e.key === "Escape" && !settingsModal.hidden) closeSettings(); if(e.key === "Escape" && !pluginCatalog.hidden) closePluginCatalog(); });
 /* ---------- ตรวจอัปเดตทันที (Project settings) ---------- */
 async function renderUpdateCheck(){
   const desc = document.getElementById("updateDesc");
