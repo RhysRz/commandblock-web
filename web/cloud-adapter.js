@@ -81,7 +81,14 @@
     if (!data.session) throw new Error('กรุณาเข้าสู่ระบบก่อนส่งข้อความ');
     return data.session;
   }
+  async function activeConversationForUser(session) {
+    const { data, error } = await client.from('conversations').select('id')
+      .eq('user_id', session.user.id).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    if (error) throw new Error('โหลดบทสนทนาที่ใช้งานอยู่ไม่สำเร็จ');
+    return data?.id || null;
+  }
   async function ensureConversation(session, message) {
+    conversationId = await activeConversationForUser(session) || conversationId;
     if (!conversationId && recovery) conversationId = recovery.loadConversationId(localStorage, session.user.id);
     if (conversationId) return conversationId;
     const title = (message || 'แชทใหม่').trim().slice(0, 80) || 'แชทใหม่';
@@ -320,6 +327,18 @@
       return json({ prompts: (rows || []).map((row) => row.content) });
     } catch { return json({ prompts: [] }); }
   }
+  async function cloudConversationSync() {
+    try {
+      const session = await currentSession();
+      const id = await activeConversationForUser(session);
+      if (!id) return json({ conversation_id: null, messages: [] });
+      conversationId = id;
+      const { data, error } = await client.from('messages').select('id,role,content,created_at')
+        .eq('user_id', session.user.id).eq('conversation_id', id).order('created_at', { ascending: true });
+      if (error) throw error;
+      return json({ conversation_id: id, messages: data || [] });
+    } catch (error) { return json({ messages: [], error: error.message || 'โหลดบทสนทนาไม่สำเร็จ' }, 401); }
+  }
   async function cloudNotes(init) {
     if ((init?.method || 'GET').toUpperCase() === 'POST') {
       const { notes = '' } = requestBody(init);
@@ -524,6 +543,7 @@
     if (path === '/api/model') return json({ ok: true, backend: 'cloud', model: MODEL, base_url: 'https://api.deepseek.com' });
     if (path === '/api/chat') return cloudChat(init);
     if (path === '/api/history') return cloudHistory();
+    if (path === '/api/conversation/sync') return cloudConversationSync();
     if (path === '/api/notes') return cloudNotes(init);
     if (path === '/api/files') return connectorResult('files', {}, (message) => ({ files: [], requires_connector: true, message }));
     if (path === '/api/changes') return connectorResult('changes', {}, (message) => ({ changes: [], requires_connector: true, message }));

@@ -995,6 +995,29 @@ fn handle(
                 json!({ "activity": activity }).to_string().as_bytes(),
             );
         }
+        ("GET", "/api/conversation/sync") => match cloud::pull(agent) {
+            Ok(Some((conversation_id, messages))) => {
+                let rows: Vec<Value> = messages
+                    .into_iter()
+                    .map(|(role, content)| json!({"role": role, "content": content}))
+                    .collect();
+                respond(
+                    &mut out,
+                    200,
+                    "application/json",
+                    json!({"conversation_id": conversation_id, "messages": rows})
+                        .to_string()
+                        .as_bytes(),
+                );
+            }
+            Ok(None) => respond(&mut out, 200, "application/json", b"{\"messages\":[]}"),
+            Err(error) => respond(
+                &mut out,
+                401,
+                "application/json",
+                json!({"error": error}).to_string().as_bytes(),
+            ),
+        },
         ("GET", "/api/notes") => {
             let path = notes_path_for(&shared.lock().unwrap().account);
             let notes = std::fs::read_to_string(&path).unwrap_or_default();

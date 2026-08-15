@@ -8,7 +8,6 @@
 
 use crate::auth;
 use serde_json::{json, Value};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 const SUPABASE_URL: &str = "https://qympivgklmstrnhfaywn.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY: &str = "sb_publishable_UJMuyL3QY8lMEWJKZi3zAQ_NFKZY8TH";
@@ -17,17 +16,6 @@ const META_DIR: &str = ".freebuff/sessions";
 
 fn meta_path(user_id: &str) -> String {
     format!("{META_DIR}/{user_id}.meta.json")
-}
-
-fn load_conv_id(user_id: &str) -> Option<String> {
-    let Ok(text) = std::fs::read_to_string(meta_path(user_id)) else {
-        return None;
-    };
-    let v: Value = serde_json::from_str(&text).ok()?;
-    v.get("conversation_id")
-        .and_then(Value::as_str)
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty())
 }
 
 fn save_conv_id(user_id: &str, conv_id: &str) {
@@ -81,49 +69,72 @@ fn text_messages(history: &[Value]) -> Vec<(String, String)> {
     out
 }
 
-/// ดึงประวัติแชทของบัญชีจากคลาวด์ (conversation ที่เคยซิงก์) → (conversation_id, [(role, content)])
-pub fn pull(agent: &ureq::Agent) -> Result<Option<(String, Vec<(String, String)>)>, String> {
-    let a = sync_agent();
-    let pair = auth::refresh_token(agent)?;
-    let Some(conv_id) = load_conv_id(&pair.user_id) else {
-        return Ok(None); // ยังไม่เคยซิงก์ — ไม่มีประวัติคลาวด์ของบัญชีนี้
-    };
+/// ใช้ conversation ล่าสุดของบัญชีเป็นแหล่งจริง ไม่ยึด meta ของเครื่องหนึ่งเครื่องใด
+fn latest_conversation(a: &ureq::Agent, pair: &auth::TokenPair) -> Result<Option<String>, String> {
+    let url = format!(
+        "{SUPABASE_URL}/rest/v1/conversations?select=id&user_id=eq.{}&order=updated_at.desc&limit=1",
+        pair.user_id
+    );
+    let rows: Vec<Value> = authed(a.get(&url), &pair.access_token)
+        .call()
+        .map_err(|_| "โหลดรายการสนทนาคลาวด์ไม่สำเร็จ".to_string())?
+        .into_json()
+        .map_err(|_| "อ่านรายการสนทนาคลาวด์ไม่สำเร็จ".to_string())?;
+    Ok(rows
+        .first()
+        .and_then(|row| row.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_string))
+}
+
+fn cloud_messages(
+    a: &ureq::Agent,
+    pair: &auth::TokenPair,
+    conv_id: &str,
+) -> Result<Vec<(String, String)>, String> {
     let url = format!(
         "{SUPABASE_URL}/rest/v1/messages?select=role,content,created_at&conversation_id=eq.{conv_id}&order=created_at.asc"
     );
-    let resp = authed(a.get(&url), &pair.access_token)
+    let arr: Vec<Value> = authed(a.get(&url), &pair.access_token)
         .call()
-        .map_err(|e| {
-            eprintln!("[cloud] pull ล้มเหลว: {e}");
-            "โหลดประวัติคลาวด์ไม่สำเร็จ".to_string()
-        })?;
-    let arr: Vec<Value> = resp
+        .map_err(|_| "โหลดประวัติคลาวด์ไม่สำเร็จ".to_string())?
         .into_json()
         .map_err(|_| "อ่านประวัติคลาวด์ไม่สำเร็จ".to_string())?;
-    let mut messages = Vec::new();
-    for m in arr {
-        let role = m.get("role").and_then(Value::as_str).unwrap_or("").to_string();
-        let content = m
-            .get("content")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        if (role == "user" || role == "assistant") && !content.trim().is_empty() {
-            messages.push((role, content));
-        }
-    }
-    Ok(Some((conv_id, messages)))
+    Ok(arr
+        .into_iter()
+        .filter_map(|m| {
+            let role = m.get("role").and_then(Value::as_str)?;
+            let content = m.get("content").and_then(Value::as_str)?;
+            ((role == "user" || role == "assistant") && !content.trim().is_empty())
+                .then(|| (role.to_string(), content.to_string()))
+        })
+        .collect())
+}
+
+/// ดึงประวัติแชทของบัญชีจากคลาวด์ (conversation ล่าสุด) → (conversation_id, [(role, content)])
+pub fn pull(agent: &ureq::Agent) -> Result<Option<(String, Vec<(String, String)>)>, String> {
+    let a = sync_agent();
+    let pair = auth::refresh_token(agent)?;
+    let Some(conv_id) = latest_conversation(&a, &pair)? else {
+        return Ok(None);
+    };
+    save_conv_id(&pair.user_id, &conv_id);
+    Ok(Some((
+        conv_id.clone(),
+        cloud_messages(&a, &pair, &conv_id)?,
+    )))
 }
 
 /// หา conversation ที่เคยซิงก์ หรือสร้างใหม่ → คืน conversation_id
 fn ensure_conversation(
-    agent: &ureq::Agent,
+    _agent: &ureq::Agent,
     pair: &auth::TokenPair,
     model: &str,
     first_user_text: &str,
 ) -> Result<String, String> {
     let a = sync_agent();
-    if let Some(id) = load_conv_id(&pair.user_id) {
+    if let Some(id) = latest_conversation(&a, pair)? {
+        save_conv_id(&pair.user_id, &id);
         return Ok(id);
     }
     // สร้าง conversation ใหม่ (title = ข้อความแรก)
@@ -159,7 +170,7 @@ fn ensure_conversation(
     Ok(id)
 }
 
-/// อัปเดตประวัติแชทของบัญชีขึ้นคลาวด์ (ลบของเก่าแล้วเขียนใหม่ทั้งชุด — ประวัติสั้นพอ)
+/// เติมเฉพาะข้อความที่ยังไม่มีบนคลาวด์ เพื่อไม่ลบงานที่เพิ่งส่งจากอีกเครื่อง
 pub fn push(agent: &ureq::Agent, history: &[Value], model: &str) -> Result<(), String> {
     let msgs = text_messages(history);
     if msgs.is_empty() {
@@ -168,39 +179,28 @@ pub fn push(agent: &ureq::Agent, history: &[Value], model: &str) -> Result<(), S
     let a = sync_agent();
     let pair = auth::refresh_token(agent)?;
     let conv_id = ensure_conversation(agent, &pair, model, &msgs[0].1)?;
-
-    // ลบข้อความเก่าของ conversation นี้ (RLS จำกัดเฉพาะของตัวเอง)
-    let del_url = format!("{SUPABASE_URL}/rest/v1/messages?conversation_id=eq.{conv_id}");
-    if let Err(e) = authed(a.delete(&del_url), &pair.access_token).call() {
-        eprintln!("[cloud] ลบข้อความเก่าล้มเหลว (ไม่ร้ายแรง): {e}");
-    }
-
-    // เขียนใหม่ทั้งชุด — กำหนด created_at เรียงตามลำดับ (กันเพี้ยนเวลา)
-    let base = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let remote = cloud_messages(&a, &pair, &conv_id)?;
     let rows: Vec<Value> = msgs
         .iter()
-        .enumerate()
-        .map(|(i, (role, content))| {
-            let ts = base - (msgs.len() as i64 - i as i64);
-            let created_at = OffsetDateTime::from_unix_timestamp(ts)
-                .ok()
-                .and_then(|t| t.format(&Rfc3339).ok())
-                .unwrap_or_default();
+        .filter(|message| !remote.contains(message))
+        .map(|(role, content)| {
             json!({
                 "conversation_id": conv_id,
                 "user_id": pair.user_id,
                 "role": role,
                 "content": content,
-                "created_at": created_at,
             })
         })
         .collect();
+    if rows.is_empty() {
+        return Ok(());
+    }
     let url = format!("{SUPABASE_URL}/rest/v1/messages");
-    match authed(a.post(&url).set("Prefer", "return=minimal"), &pair.access_token)
-        .send_json(json!(rows))
+    match authed(
+        a.post(&url).set("Prefer", "return=minimal"),
+        &pair.access_token,
+    )
+    .send_json(json!(rows))
     {
         Ok(_) => Ok(()),
         Err(e) => {

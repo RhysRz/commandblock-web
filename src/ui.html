@@ -1270,6 +1270,7 @@ function enterApp(email){
     document.getElementById("statsRight").textContent =
       (s.skill_count || 0) + " ทักษะ · " + (s.session_messages || 0) + " ข้อความจำ";
   }).catch(()=>{});
+  setTimeout(startConversationSync, 0);
 }
 // ตรวจสถานะบัญชีตอนเปิดแอป — ล็อกอินอยู่แล้ว = ข้ามหน้าแรก
 (async () => {
@@ -1278,6 +1279,7 @@ function enterApp(email){
     if (j.logged_in) {
       authScreen.hidden = true;
       showAccount(j.email);
+      setTimeout(startConversationSync, 0);
     } else {
       authScreen.hidden = false;
       authEmail.focus();
@@ -1487,6 +1489,38 @@ function addMsg(role, html){
   wrap.appendChild(div); scrollBottom(); return div;
 }
 
+let conversationSyncTimer = null;
+const seenConversationRows = new Set();
+const pendingConversationRows = new Set();
+function conversationTextKey(role, content){ return role+"\n"+String(content||""); }
+function rememberConversationMessage(role, content){ pendingConversationRows.add(conversationTextKey(role, content)); }
+function stopConversationSync(){
+  if(conversationSyncTimer){ clearInterval(conversationSyncTimer); conversationSyncTimer=null; }
+  seenConversationRows.clear(); pendingConversationRows.clear();
+}
+async function syncConversationOnce(){
+  if(document.hidden) return;
+  try{
+    const res = await fetch("/api/conversation/sync");
+    if(!res.ok) return;
+    const data = await res.json();
+    for(const row of data.messages||[]){
+      if(!row || !row.content || (row.role!=="user" && row.role!=="assistant")) continue;
+      const rowKey = row.id || [row.created_at||"",row.role,row.content].join("\n");
+      if(seenConversationRows.has(rowKey)) continue;
+      seenConversationRows.add(rowKey);
+      const textKey = conversationTextKey(row.role,row.content);
+      if(pendingConversationRows.delete(textKey)) continue;
+      addMsg(row.role, renderMarkdown(row.content));
+    }
+  }catch(_){}
+}
+function startConversationSync(){
+  if(conversationSyncTimer) return;
+  syncConversationOnce();
+  conversationSyncTimer = setInterval(syncConversationOnce, 3000);
+}
+
 const FILE_TOOLS = ["write_file","edit_file","append_file"];
 /* ไลน์กิจกรรมเครื่องมือ (แบบ Freebuff: "✏️ Edit src/ui.html") */
 const TOOL_META = {
@@ -1652,6 +1686,7 @@ async function send(){
   const userHtml = esc(text || (sentAtts.length? "(ส่งไฟล์/รูป)" : "")) +
     (sentAtts.length ? '<div class="atts">'+sentAtts.map(a=>a.kind==="image" ? '<img src="'+a.thumb+'" class="attimg">' : '<span class="attmini">📄 '+esc(a.name)+'</span>').join("")+'</div>' : "");
   addMsg("user",userHtml);
+  rememberConversationMessage("user", msgText);
   addToHistory(text || "(ไฟล์แนบ)");
   turnChanges = new Map(); turnActivity = ""; todos = [];
   setBusy(true);    const thinking=addMsg("assistant",'<span class="note">กำลังคิด…</span>');
@@ -1717,7 +1752,7 @@ async function send(){
           });
         }
       }
-      if(acc) txt.innerHTML=renderMarkdown(acc);
+      if(acc) { txt.innerHTML=renderMarkdown(acc); rememberConversationMessage("assistant", acc); }
       else if(!bub.querySelector(".note")&&!bub.querySelector(".changebox")&&!bub.querySelector(".changecard")) txt.innerHTML='<span class="err">(ไม่มีคำตอบจาก AI)</span>';
       cur.remove();
       scrollBottom();
@@ -2230,6 +2265,7 @@ document.getElementById("accountLogin").addEventListener("click", () => {
 });
 document.getElementById("accountLogout").addEventListener("click", async () => {
   if (!confirm("ออกจากระบบ? ข้อมูลของบัญชีนี้ยังเก็บอยู่บนเครื่อง")) return;
+  stopConversationSync();
   try {
     await fetch("/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
   } catch (_) {}
