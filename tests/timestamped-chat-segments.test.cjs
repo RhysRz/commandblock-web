@@ -48,7 +48,7 @@ test('a tool boundary finalizes visible text before the active work area starts'
 
 test('desktop sync keeps the database row identity and timestamp for chronological rendering', () => {
   const gui = fs.readFileSync(path.join(__dirname, '..', 'src', 'gui.rs'), 'utf8');
-  assert.match(gui, /json!\(\{"id": message\.id, "role": message\.role, "content": message\.content, "created_at": message\.created_at\}\)/);
+  assert.match(gui, /json!\(\{"id": message\.id, "role": message\.role, "content": message\.content, "created_at": message\.created_at, "is_pinned": message\.is_pinned\}\)/);
 });
 
 test('shared UI loads the timeline helper and uses it for synchronized rows', () => {
