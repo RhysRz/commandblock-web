@@ -127,9 +127,16 @@
         parameters: { type: 'object', properties: { path: { type: 'string', description: 'โฟลเดอร์ที่จะดู (ไม่ใส่ = root)' } }, required: [] },
       },
     },
+    {
+      type: 'function', function: {
+        name: 'update_plan', description: 'บันทึกแผนงานเป็นข้อความลำดับขั้นเพื่อแสดง Todo ให้ผู้ใช้',
+        parameters: { type: 'object', properties: { plan: { type: 'string', description: 'แผนงานหลายขั้นตอนแบบลำดับเลข' } }, required: ['plan'] },
+      },
+    },
   ];
   const agentSystem = 'คุณคือ CommandBlock ผู้ช่วยพัฒนาโค้ด AI ทำงานบนคอมพิวเตอร์ของผู้ใช้ผ่าน Desktop Connector ' +
     'คุณสามารถรันคำสั่ง อ่านไฟล์ และดูรายการไฟล์เพื่อทำงานให้สำเร็จ — วางแผนเป็นขั้นตอน ใช้เครื่องมือทีละอย่าง ' +
+    'อัปเดต Todo เมื่อเริ่มงานและเมื่อขั้นตอนเสร็จ โดยเรียก update_plan เป็นรายการลำดับเลขที่กระชับ ' +
     'และสรุปผลงานเป็นภาษาไทยสั้นๆ กระชับ ถ้าเครื่องมือล้มเหลวให้ลองวิธีอื่นหรือแจ้งผู้ใช้';
   async function agentCall(apiKey, messages, onDelta) {
     // stream: true — อ่าน SSE ทีละ chunk แล้วเรียก onDelta(ev, payload) แบบเรียลไทม์
@@ -193,6 +200,7 @@
     if (name === 'run_command') return requestConnector('exec', { command: args.command || '', cwd: args.cwd || '' });
     if (name === 'read_file') return requestConnector('read', { path: args.path || '' });
     if (name === 'list_files') return requestConnector('files', { path: args.path || '' });
+    if (name === 'update_plan') return { ok: true, plan: args.plan || '' };
     return { error: 'ไม่รู้จักเครื่องมือ ' + name };
   }
   async function cloudChat(init) {
