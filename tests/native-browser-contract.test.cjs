@@ -14,3 +14,13 @@ test('agent browser tools use the native bridge and never claim a user click hap
   assert.match(browserTools, /BrowserCommand::Click/);
   assert.doesNotMatch(browserTools, /กรุณาคลิก.*ใน Preview/);
 });
+
+test('desktop GUI owns a child WebView and routes browser commands on its UI thread', () => {
+  const gui = fs.readFileSync(path.join(root, 'src', 'gui.rs'), 'utf8');
+
+  assert.match(gui, /build_as_child\(window\)/);
+  assert.match(gui, /set_bounds\(/);
+  assert.match(gui, /set_visible\(/);
+  assert.match(gui, /register_bridge/);
+  assert.match(gui, /"\/api\/browser"/);
+});

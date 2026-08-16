@@ -42,7 +42,8 @@ pub enum BrowserCommand {
     Forward,
     Reload,
     Inspect,
-    Click { selector: String, confirmed: bool },
+    Click { selector: String },
+    ConfirmPending,
     Fill { selector: String, value: String },
     Press { key: String },
     Scroll { direction: ScrollDirection },
@@ -98,6 +99,28 @@ impl BrowserReply {
                 "[Browser: ต้องยืนยัน] เว็บไซต์ {site} กำลังจะ {action} ({selector}) — ขอให้ผู้ใช้ยืนยันในหน้าต่าง CommandBlock ก่อน แล้วจึงเรียก browser_click ซ้ำพร้อม confirmed=true"
             ),
             Self::Error(message) => format!("[Browser] {message}"),
+        }
+    }
+
+    pub fn as_json(&self) -> Value {
+        match self {
+            Self::Ok {
+                message,
+                url,
+                details,
+            } => json!({"ok": true, "message": message, "url": url, "details": details}),
+            Self::ConfirmationRequired {
+                site,
+                action,
+                selector,
+            } => json!({
+                "ok": false,
+                "confirmation_required": true,
+                "site": site,
+                "action": action,
+                "selector": selector,
+            }),
+            Self::Error(message) => json!({"ok": false, "error": message}),
         }
     }
 }

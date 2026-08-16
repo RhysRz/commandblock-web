@@ -6,11 +6,13 @@
 //! - POST /api/chat    ส่งข้อความ → สตรีมคำตอบกลับเป็น SSE (content/tool/note/done)
 
 use crate::{auth, cloud, config, connector, diagnostics, remote, tools, update, TurnSink};
+use commandblock::browser::{self, BrowserBounds, BrowserBridge, BrowserCommand, BrowserReply, ScrollDirection};
 use image::GenericImageView;
 use serde_json::{json, Value};
 use std::io::{BufWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 
 const UI_HTML: &str = include_str!("ui.html");
 const CHAT_TIMELINE_JS: &str = include_str!("../web/chat-timeline.js");
@@ -38,6 +40,381 @@ struct Shared {
     folder_path: String,          // พาธเต็มของโฟลเดอร์ปัจจุบัน
     account: Option<auth::Account>, // บัญชีที่ล็อกอิน (เก็บข้อมูลต่อบัญชี — ประวัติแชท/โน้ต)
     conversation_id: Option<String>, // SESSION ที่กำลังทำงานอยู่ (ข้อมูลคลาวด์เดียวกับเว็บ)
+}
+
+enum DesktopEvent {
+    Browser {
+        command: BrowserCommand,
+        response: mpsc::Sender<BrowserReply>,
+    },
+}
+
+#[derive(Clone)]
+struct MpscBrowserBridge {
+    proxy: winit::event_loop::EventLoopProxy<DesktopEvent>,
+}
+
+impl BrowserBridge for MpscBrowserBridge {
+    fn dispatch(&self, command: BrowserCommand) -> BrowserReply {
+        let (response_tx, response_rx) = mpsc::channel();
+        if self
+            .proxy
+            .send_event(DesktopEvent::Browser {
+                command,
+                response: response_tx,
+            })
+            .is_err()
+        {
+            return BrowserReply::error("Native Browser ปิดอยู่");
+        }
+        response_rx
+            .recv_timeout(Duration::from_secs(8))
+            .unwrap_or_else(|_| BrowserReply::error("Native Browser ตอบกลับช้าเกินไป"))
+    }
+}
+
+#[derive(Clone)]
+struct PendingBrowserClick {
+    selector: String,
+    site: String,
+    action: String,
+}
+
+struct NativeBrowserController {
+    webview: Option<wry::WebView>,
+    bounds: BrowserBounds,
+    wants_visible: bool,
+    pending_click: Option<PendingBrowserClick>,
+}
+
+impl Default for NativeBrowserController {
+    fn default() -> Self {
+        Self {
+            webview: None,
+            bounds: BrowserBounds::EMPTY,
+            wants_visible: false,
+            pending_click: None,
+        }
+    }
+}
+
+impl NativeBrowserController {
+    fn rect(bounds: BrowserBounds) -> wry::Rect {
+        wry::Rect {
+            position: wry::dpi::PhysicalPosition::new(bounds.x, bounds.y).into(),
+            size: wry::dpi::PhysicalSize::new(bounds.width, bounds.height).into(),
+        }
+    }
+
+    fn current_url(&self) -> String {
+        self.webview
+            .as_ref()
+            .and_then(|webview| webview.url().ok())
+            .unwrap_or_default()
+    }
+
+    fn ensure_webview(
+        &mut self,
+        window: &winit::window::Window,
+        context: Option<&mut wry::WebContext>,
+        url: &str,
+    ) -> Result<(), String> {
+        if self.webview.is_some() {
+            return Ok(());
+        }
+        let builder = match context {
+            Some(context) => wry::WebViewBuilder::new_with_web_context(context),
+            None => wry::WebViewBuilder::new(),
+        };
+        let webview = builder
+            .with_bounds(Self::rect(self.bounds))
+            .with_url(url)
+            .build_as_child(window)
+            .map_err(|error| format!("สร้าง Native Browser ไม่สำเร็จ: {error}"))?;
+        let _ = webview.set_visible(false);
+        self.webview = Some(webview);
+        Ok(())
+    }
+
+    fn show(&mut self, url: String, bounds: BrowserBounds, window: &winit::window::Window, context: Option<&mut wry::WebContext>) -> BrowserReply {
+        let url = match browser::validate_public_https(&url) {
+            Ok(url) => url,
+            Err(error) => return BrowserReply::error(error),
+        };
+        self.bounds = bounds;
+        if let Err(error) = self.ensure_webview(window, context, &url) {
+            return BrowserReply::error(error);
+        }
+        let Some(webview) = self.webview.as_ref() else {
+            return BrowserReply::error("Native Browser ยังไม่พร้อม");
+        };
+        if self.current_url() != url {
+            if let Err(error) = webview.load_url(&url) {
+                return BrowserReply::error(format!("เปิด URL ไม่สำเร็จ: {error}"));
+            }
+        }
+        if let Err(error) = webview.set_bounds(Self::rect(bounds)) {
+            return BrowserReply::error(format!("ปรับขนาด Native Browser ไม่สำเร็จ: {error}"));
+        }
+        self.wants_visible = true;
+        if let Err(error) = webview.set_visible(bounds.is_visible()) {
+            return BrowserReply::error(format!("แสดง Native Browser ไม่สำเร็จ: {error}"));
+        }
+        BrowserReply::ok("เปิด Native Browser ใน Preview แล้ว", url, json!({"visible": bounds.is_visible()}))
+    }
+
+    fn evaluate_json(webview: &wry::WebView, script: &str) -> Result<Value, String> {
+        let (tx, rx) = mpsc::channel();
+        webview
+            .evaluate_script_with_callback(script, move |result| {
+                let _ = tx.send(result);
+            })
+            .map_err(|error| format!("รันคำสั่ง Browser ไม่สำเร็จ: {error}"))?;
+        let raw = rx
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|_| "Native Browser ไม่ตอบผลการทำงานภายใน 5 วินาที".to_string())?;
+        let text = serde_json::from_str::<String>(&raw).unwrap_or(raw);
+        serde_json::from_str(&text).map_err(|_| "Native Browser คืนข้อมูลที่อ่านไม่ได้".to_string())
+    }
+
+    fn inspect(&self) -> BrowserReply {
+        let Some(webview) = self.webview.as_ref() else {
+            return BrowserReply::error("ยังไม่มีหน้า Native Browser ให้ตรวจ — ใช้ browser_open ก่อน");
+        };
+        const INSPECT: &str = r#"(() => { try {
+          const visible = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+          const nodes = [...document.querySelectorAll('a,button,input,textarea,select,[role="button"],[contenteditable="true"]')].filter(visible).slice(0,80);
+          const controls = nodes.map((el, index) => {
+            el.setAttribute('data-commandblock-node', String(index));
+            return { selector: '[data-commandblock-node="' + index + '"]', tag: el.tagName.toLowerCase(), label: (el.innerText || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.value || '').trim().slice(0,180), type: (el.getAttribute('type') || '').toLowerCase(), disabled: !!el.disabled };
+          });
+          return JSON.stringify({ title: document.title.slice(0,300), url: location.href, text: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0,8000), controls });
+        } catch (error) { return JSON.stringify({ error: String(error), url: location.href }); } })()"#;
+        match Self::evaluate_json(webview, INSPECT) {
+            Ok(details) if details.get("error").is_none() => {
+                let url = details
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                BrowserReply::ok("ตรวจ Native Browser แล้ว", url, details)
+            }
+            Ok(details) => BrowserReply::error(details.get("error").and_then(Value::as_str).unwrap_or("ตรวจหน้าเว็บไม่สำเร็จ")),
+            Err(error) => BrowserReply::error(error),
+        }
+    }
+
+    fn click(&mut self, selector: String) -> BrowserReply {
+        let Some(webview) = self.webview.as_ref() else {
+            return BrowserReply::error("ยังไม่มีหน้า Native Browser ให้คลิก — ใช้ browser_open ก่อน");
+        };
+        let selector_json = serde_json::to_string(&selector).unwrap_or_else(|_| "\"\"".to_string());
+        let inspect_script = format!(r#"(() => {{ try {{ const el = document.querySelector({selector_json}); if (!el) return JSON.stringify({{error:'ไม่พบองค์ประกอบ'}}); return JSON.stringify({{tag:el.tagName.toLowerCase(), label:(el.innerText || el.getAttribute('aria-label') || el.value || '').trim().slice(0,180), type:(el.getAttribute('type') || '').toLowerCase(), url:location.href}}); }} catch (error) {{ return JSON.stringify({{error:String(error)}}); }} }})()"#);
+        let target = match Self::evaluate_json(webview, &inspect_script) {
+            Ok(target) => target,
+            Err(error) => return BrowserReply::error(error),
+        };
+        if let Some(error) = target.get("error").and_then(Value::as_str) {
+            return BrowserReply::error(error);
+        }
+        let tag = target.get("tag").and_then(Value::as_str).unwrap_or_default();
+        let label = target.get("label").and_then(Value::as_str).unwrap_or_default();
+        let control_type = target.get("type").and_then(Value::as_str).unwrap_or_default();
+        if browser::requires_confirmation(tag, label, control_type) {
+            let site = self.current_url();
+            let action = if label.is_empty() { "ทำการเปลี่ยนแปลงบนเว็บไซต์".to_string() } else { label.to_string() };
+            self.pending_click = Some(PendingBrowserClick { selector: selector.clone(), site: site.clone(), action: action.clone() });
+            return BrowserReply::ConfirmationRequired { site, action, selector };
+        }
+        self.run_click(selector)
+    }
+
+    fn run_click(&mut self, selector: String) -> BrowserReply {
+        let Some(webview) = self.webview.as_ref() else {
+            return BrowserReply::error("Native Browser ปิดอยู่");
+        };
+        let selector_json = serde_json::to_string(&selector).unwrap_or_else(|_| "\"\"".to_string());
+        let script = format!(r#"(() => {{ try {{ const el = document.querySelector({selector_json}); if (!el) return JSON.stringify({{error:'ไม่พบองค์ประกอบ'}}); el.click(); return JSON.stringify({{ok:true,url:location.href}}); }} catch (error) {{ return JSON.stringify({{error:String(error)}}); }} }})()"#);
+        match Self::evaluate_json(webview, &script) {
+            Ok(details) if details.get("error").is_none() => BrowserReply::ok("คลิกองค์ประกอบใน Native Browser แล้ว", self.current_url(), details),
+            Ok(details) => BrowserReply::error(details.get("error").and_then(Value::as_str).unwrap_or("คลิกไม่สำเร็จ")),
+            Err(error) => BrowserReply::error(error),
+        }
+    }
+
+    fn confirm_pending(&mut self) -> BrowserReply {
+        let Some(pending) = self.pending_click.take() else {
+            return BrowserReply::error("ไม่มีการกระทำ Browser ที่รอการยืนยัน");
+        };
+        match self.run_click(pending.selector) {
+            BrowserReply::Ok { url, details, .. } => BrowserReply::ok(
+                format!("ยืนยัน '{}' บน {} แล้ว", pending.action, pending.site),
+                url,
+                details,
+            ),
+            other => other,
+        }
+    }
+
+    fn fill(&self, selector: String, value: String) -> BrowserReply {
+        let Some(webview) = self.webview.as_ref() else {
+            return BrowserReply::error("ยังไม่มีหน้า Native Browser ให้กรอก — ใช้ browser_open ก่อน");
+        };
+        let selector_json = serde_json::to_string(&selector).unwrap_or_else(|_| "\"\"".to_string());
+        let value_json = serde_json::to_string(&value).unwrap_or_else(|_| "\"\"".to_string());
+        let script = format!(r#"(() => {{ try {{ const el = document.querySelector({selector_json}); if (!el) return JSON.stringify({{error:'ไม่พบช่องกรอก'}}); el.focus(); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set || Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set; if (setter) setter.call(el, {value_json}); else el.value = {value_json}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return JSON.stringify({{ok:true,url:location.href}}); }} catch (error) {{ return JSON.stringify({{error:String(error)}}); }} }})()"#);
+        match Self::evaluate_json(webview, &script) {
+            Ok(details) if details.get("error").is_none() => BrowserReply::ok("กรอกข้อมูลใน Native Browser แล้ว", self.current_url(), details),
+            Ok(details) => BrowserReply::error(details.get("error").and_then(Value::as_str).unwrap_or("กรอกข้อมูลไม่สำเร็จ")),
+            Err(error) => BrowserReply::error(error),
+        }
+    }
+
+    fn press(&self, key: String) -> BrowserReply {
+        let Some(webview) = self.webview.as_ref() else {
+            return BrowserReply::error("ยังไม่มีหน้า Native Browser ให้กดปุ่ม");
+        };
+        let key_json = serde_json::to_string(&key).unwrap_or_else(|_| "\"\"".to_string());
+        let script = format!(r#"(() => {{ try {{ const target = document.activeElement || document.body; target.dispatchEvent(new KeyboardEvent('keydown', {{key:{key_json}, bubbles:true}})); target.dispatchEvent(new KeyboardEvent('keyup', {{key:{key_json}, bubbles:true}})); return JSON.stringify({{ok:true,url:location.href}}); }} catch (error) {{ return JSON.stringify({{error:String(error)}}); }} }})()"#);
+        match Self::evaluate_json(webview, &script) {
+            Ok(details) if details.get("error").is_none() => BrowserReply::ok("ส่งปุ่มไปยัง Native Browser แล้ว", self.current_url(), details),
+            Ok(details) => BrowserReply::error(details.get("error").and_then(Value::as_str).unwrap_or("กดปุ่มไม่สำเร็จ")),
+            Err(error) => BrowserReply::error(error),
+        }
+    }
+
+    fn scroll(&self, direction: ScrollDirection) -> BrowserReply {
+        let Some(webview) = self.webview.as_ref() else {
+            return BrowserReply::error("ยังไม่มีหน้า Native Browser ให้เลื่อน");
+        };
+        let distance = match direction { ScrollDirection::Up => -640, ScrollDirection::Down => 640 };
+        let script = format!(r#"(() => {{ window.scrollBy({{top:{distance}, behavior:'smooth'}}); return JSON.stringify({{ok:true,url:location.href}}); }})()"#);
+        match Self::evaluate_json(webview, &script) {
+            Ok(details) => BrowserReply::ok("เลื่อน Native Browser แล้ว", self.current_url(), details),
+            Err(error) => BrowserReply::error(error),
+        }
+    }
+
+    fn handle(
+        &mut self,
+        command: BrowserCommand,
+        window: &winit::window::Window,
+        context: Option<&mut wry::WebContext>,
+    ) -> BrowserReply {
+        match command {
+            BrowserCommand::Show { url, bounds } => self.show(url, bounds, window, context),
+            BrowserCommand::Hide => {
+                self.wants_visible = false;
+                if let Some(webview) = self.webview.as_ref() {
+                    if let Err(error) = webview.set_visible(false) {
+                        return BrowserReply::error(format!("ซ่อน Native Browser ไม่สำเร็จ: {error}"));
+                    }
+                }
+                BrowserReply::ok("ซ่อน Native Browser แล้ว", self.current_url(), json!({"visible": false}))
+            }
+            BrowserCommand::SetBounds { bounds } => {
+                self.bounds = bounds;
+                if let Some(webview) = self.webview.as_ref() {
+                    if let Err(error) = webview.set_bounds(Self::rect(bounds)) {
+                        return BrowserReply::error(format!("ปรับขนาด Native Browser ไม่สำเร็จ: {error}"));
+                    }
+                    if let Err(error) = webview.set_visible(self.wants_visible && bounds.is_visible()) {
+                        return BrowserReply::error(format!("แสดง Native Browser ไม่สำเร็จ: {error}"));
+                    }
+                }
+                BrowserReply::ok("อัปเดตขนาด Native Browser แล้ว", self.current_url(), json!({"visible": self.wants_visible && bounds.is_visible()}))
+            }
+            BrowserCommand::Navigate { url } => {
+                let url = match browser::validate_public_https(&url) { Ok(url) => url, Err(error) => return BrowserReply::error(error) };
+                self.show(url, self.bounds, window, context)
+            }
+            BrowserCommand::Back => match self.webview.as_ref().ok_or_else(|| "ยังไม่มีหน้า Native Browser".to_string()).and_then(|webview| webview.go_back().map_err(|error| error.to_string())) {
+                Ok(()) => BrowserReply::ok("ย้อนกลับใน Native Browser แล้ว", self.current_url(), json!({})),
+                Err(error) => BrowserReply::error(error),
+            },
+            BrowserCommand::Forward => match self.webview.as_ref().ok_or_else(|| "ยังไม่มีหน้า Native Browser".to_string()).and_then(|webview| webview.go_forward().map_err(|error| error.to_string())) {
+                Ok(()) => BrowserReply::ok("ไปข้างหน้าใน Native Browser แล้ว", self.current_url(), json!({})),
+                Err(error) => BrowserReply::error(error),
+            },
+            BrowserCommand::Reload => match self.webview.as_ref().ok_or_else(|| "ยังไม่มีหน้า Native Browser".to_string()).and_then(|webview| webview.reload().map_err(|error| error.to_string())) {
+                Ok(()) => BrowserReply::ok("รีเฟรช Native Browser แล้ว", self.current_url(), json!({})),
+                Err(error) => BrowserReply::error(error),
+            },
+            BrowserCommand::Inspect => self.inspect(),
+            BrowserCommand::Click { selector } => self.click(selector),
+            BrowserCommand::ConfirmPending => self.confirm_pending(),
+            BrowserCommand::Fill { selector, value } => self.fill(selector, value),
+            BrowserCommand::Press { key } => self.press(key),
+            BrowserCommand::Scroll { direction } => self.scroll(direction),
+        }
+    }
+}
+
+fn browser_bounds_from_value(value: &Value) -> Result<BrowserBounds, String> {
+    let number = |key: &str| -> Result<i64, String> {
+        value
+            .get(key)
+            .and_then(Value::as_i64)
+            .ok_or_else(|| format!("Browser bounds ไม่มีค่า {key}"))
+    };
+    let x = number("x")?.clamp(-20_000, 20_000) as i32;
+    let y = number("y")?.clamp(-20_000, 20_000) as i32;
+    let width = number("width")?.clamp(1, 20_000) as u32;
+    let height = number("height")?.clamp(1, 20_000) as u32;
+    Ok(BrowserBounds { x, y, width, height })
+}
+
+fn browser_command_from_request(value: &Value) -> Result<BrowserCommand, String> {
+    let action = value.get("action").and_then(Value::as_str).unwrap_or_default();
+    let text = |key: &str| -> Result<String, String> {
+        value
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| format!("Browser ต้องระบุ {key}"))
+    };
+    match action {
+        "show" => Ok(BrowserCommand::Show {
+            url: text("url")?,
+            bounds: browser_bounds_from_value(value)?,
+        }),
+        "hide" => Ok(BrowserCommand::Hide),
+        "bounds" => Ok(BrowserCommand::SetBounds {
+            bounds: browser_bounds_from_value(value)?,
+        }),
+        "navigate" => Ok(BrowserCommand::Navigate { url: text("url")? }),
+        "back" => Ok(BrowserCommand::Back),
+        "forward" => Ok(BrowserCommand::Forward),
+        "reload" => Ok(BrowserCommand::Reload),
+        "inspect" => Ok(BrowserCommand::Inspect),
+        "click" => Ok(BrowserCommand::Click {
+            selector: browser::validate_selector(&text("selector")?)?,
+        }),
+        "confirm" => Ok(BrowserCommand::ConfirmPending),
+        "fill" => Ok(BrowserCommand::Fill {
+            selector: browser::validate_selector(&text("selector")?)?,
+            value: text("value")?,
+        }),
+        "press" => {
+            let key = text("key")?;
+            if !matches!(key.as_str(), "Enter" | "Escape" | "Tab") {
+                return Err("Browser key ต้องเป็น Enter, Escape หรือ Tab".to_string());
+            }
+            Ok(BrowserCommand::Press { key })
+        }
+        "scroll" => match text("direction")?.as_str() {
+            "up" => Ok(BrowserCommand::Scroll {
+                direction: ScrollDirection::Up,
+            }),
+            "down" => Ok(BrowserCommand::Scroll {
+                direction: ScrollDirection::Down,
+            }),
+            _ => Err("Browser direction ต้องเป็น up หรือ down".to_string()),
+        },
+        _ => Err("ไม่รู้จักคำสั่ง Native Browser".to_string()),
+    }
 }
 
 impl Shared {
@@ -558,9 +935,11 @@ fn run_desktop_window(url: &str) -> Result<(), String> {
         icon: Option<Icon>,
         window: Option<Window>,
         webview: Option<wry::WebView>,
+        web_context: Option<wry::WebContext>,
+        browser: NativeBrowserController,
     }
 
-    impl ApplicationHandler for App {
+    impl ApplicationHandler<DesktopEvent> for App {
         fn resumed(&mut self, event_loop: &ActiveEventLoop) {
             if self.window.is_some() {
                 return;
@@ -582,8 +961,7 @@ fn run_desktop_window(url: &str) -> Result<(), String> {
                 }
             };
             // เก็บข้อมูล WebView2 ไว้ที่ AppData (ไม่ให้รกโฟลเดอร์โปรเจกต์)
-            let mut ctx_holder = user_data_dir().map(|d| wry::WebContext::new(Some(d)));
-            let builder = match ctx_holder.as_mut() {
+            let builder = match self.web_context.as_mut() {
                 Some(ctx) => wry::WebViewBuilder::new_with_web_context(ctx),
                 None => wry::WebViewBuilder::new(),
             };
@@ -599,6 +977,15 @@ fn run_desktop_window(url: &str) -> Result<(), String> {
             self.webview = Some(webview);
         }
 
+        fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: DesktopEvent) {
+            let DesktopEvent::Browser { command, response } = event;
+            let result = match self.window.as_ref() {
+                Some(window) => self.browser.handle(command, window, self.web_context.as_mut()),
+                None => BrowserReply::error("หน้าต่าง CommandBlock ยังไม่พร้อม"),
+            };
+            let _ = response.send(result);
+        }
+
         fn window_event(
             &mut self,
             event_loop: &ActiveEventLoop,
@@ -611,15 +998,25 @@ fn run_desktop_window(url: &str) -> Result<(), String> {
         }
     }
 
-    let event_loop = EventLoop::new().map_err(|e| e.to_string())?;
+    let event_loop: EventLoop<DesktopEvent> = EventLoop::with_user_event()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let bridge = Arc::new(MpscBrowserBridge {
+        proxy: event_loop.create_proxy(),
+    });
+    browser::register_bridge(bridge);
     event_loop.set_control_flow(ControlFlow::Wait);
     let mut app = App {
         url: url.to_string(),
         icon: build_icon(),
         window: None,
         webview: None,
+        web_context: user_data_dir().map(|d| wry::WebContext::new(Some(d))),
+        browser: NativeBrowserController::default(),
     };
-    event_loop.run_app(&mut app).map_err(|e| e.to_string())?;
+    let result = event_loop.run_app(&mut app).map_err(|e| e.to_string());
+    browser::clear_bridge();
+    result?;
     Ok(())
 }
 
@@ -842,6 +1239,27 @@ fn handle(
                 .to_string()
                 .as_bytes(),
         ),
+        ("POST", "/api/browser") => {
+            let value = serde_json::from_str::<Value>(&body_str).unwrap_or_default();
+            let result = browser_command_from_request(&value).map(browser::dispatch);
+            match result {
+                Ok(reply) => {
+                    let status = if matches!(reply, BrowserReply::Error(_)) { 409 } else { 200 };
+                    respond(
+                        &mut out,
+                        status,
+                        "application/json",
+                        reply.as_json().to_string().as_bytes(),
+                    );
+                }
+                Err(error) => respond(
+                    &mut out,
+                    400,
+                    "application/json",
+                    json!({"ok": false, "error": error}).to_string().as_bytes(),
+                ),
+            }
+        }
         ("POST", "/api/update") => {
             let action = serde_json::from_str::<Value>(&body_str)
                 .ok()
