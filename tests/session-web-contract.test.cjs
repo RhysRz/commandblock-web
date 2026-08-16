@@ -69,3 +69,13 @@ test('shared UI renames SESSIONs with an in-app dialog instead of a browser prom
   assert.match(ui, /\/api\/conversations\/"\+encodeURIComponent\(id\)\+"\/rename/);
   assert.doesNotMatch(ui, /window\.prompt\([^\n]*SESSION/);
 });
+
+test('SESSION rename dialog is parsed before the script that binds its controls', () => {
+  const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
+  const dialog = ui.indexOf('id="renameSessionDialog"');
+  const binding = ui.indexOf('renameSessionInput.addEventListener');
+
+  assert.ok(dialog >= 0, 'rename dialog exists');
+  assert.ok(binding >= 0, 'rename input handler exists');
+  assert.ok(dialog < binding, 'dialog must exist before its event handlers run');
+});

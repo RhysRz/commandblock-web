@@ -1281,6 +1281,14 @@
   </div>
 </section>
 
+<div class="modal" id="renameSessionDialog" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="renameSessionTitle">
+    <div class="modal-head"><span class="modal-title" id="renameSessionTitle">Rename SESSION</span><button class="modal-x" id="renameSessionX" type="button" title="ปิด">✕</button></div>
+    <div class="rename-session-body"><label for="renameSessionInput">ชื่อ SESSION</label><input id="renameSessionInput" maxlength="80" autocomplete="off" placeholder="ชื่อ SESSION"><div class="rename-session-hint">ตั้งชื่อได้สูงสุด 80 ตัวอักษร</div></div>
+    <div class="modal-foot"><span></span><span class="set-actions"><button class="btn-cancel" id="renameSessionCancel" type="button">ยกเลิก</button><button class="btn-save" id="renameSessionSave" type="button">บันทึก</button></span></div>
+  </div>
+</div>
+
 <script src="/assets/chat-timeline.js"></script>
 <script src="/assets/session-store.js"></script>
 <script>
@@ -2682,14 +2690,6 @@ document.getElementById("fb").addEventListener("click",()=>{
     <div class="modal-head"><span class="modal-title" id="accountProfileTitle">จัดการบัญชี</span><button class="modal-x" id="accountProfileX" type="button" title="ปิด">✕</button></div>
     <div class="account-profile-body"><label for="accountDisplayName">ชื่อที่แสดง</label><input id="accountDisplayName" maxlength="60" autocomplete="name" placeholder="ชื่อของคุณ"><div class="set-desc" id="accountProfileEmail"></div></div>
     <div class="modal-foot"><span></span><span class="set-actions"><button class="btn-cancel" id="accountProfileCancel" type="button">ยกเลิก</button><button class="btn-save" id="accountProfileSave" type="button">บันทึก</button></span></div>
-  </div>
-</div>
-
-<div class="modal" id="renameSessionDialog" hidden>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="renameSessionTitle">
-    <div class="modal-head"><span class="modal-title" id="renameSessionTitle">Rename SESSION</span><button class="modal-x" id="renameSessionX" type="button" title="ปิด">✕</button></div>
-    <div class="rename-session-body"><label for="renameSessionInput">ชื่อ SESSION</label><input id="renameSessionInput" maxlength="80" autocomplete="off" placeholder="ชื่อ SESSION"><div class="rename-session-hint">ตั้งชื่อได้สูงสุด 80 ตัวอักษร</div></div>
-    <div class="modal-foot"><span></span><span class="set-actions"><button class="btn-cancel" id="renameSessionCancel" type="button">ยกเลิก</button><button class="btn-save" id="renameSessionSave" type="button">บันทึก</button></span></div>
   </div>
 </div>
 
