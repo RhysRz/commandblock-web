@@ -343,6 +343,10 @@ impl NativeBrowserController {
             BrowserCommand::Inspect => self.inspect(),
             BrowserCommand::Click { selector } => self.click(selector),
             BrowserCommand::ConfirmPending => self.confirm_pending(),
+            BrowserCommand::CancelPending => {
+                self.pending_click = None;
+                BrowserReply::ok("ยกเลิกการกระทำ Native Browser แล้ว", self.current_url(), json!({}))
+            }
             BrowserCommand::Fill { selector, value } => self.fill(selector, value),
             BrowserCommand::Press { key } => self.press(key),
             BrowserCommand::Scroll { direction } => self.scroll(direction),
@@ -393,6 +397,7 @@ fn browser_command_from_request(value: &Value) -> Result<BrowserCommand, String>
             selector: browser::validate_selector(&text("selector")?)?,
         }),
         "confirm" => Ok(BrowserCommand::ConfirmPending),
+        "cancel" => Ok(BrowserCommand::CancelPending),
         "fill" => Ok(BrowserCommand::Fill {
             selector: browser::validate_selector(&text("selector")?)?,
             value: text("value")?,
@@ -2201,6 +2206,26 @@ impl TurnSink for SseSink<'_> {
         // เพื่อให้ UI โหลด iframe หลัง PREVIEW_URL ถูกบันทึกเรียบร้อย
         if text.starts_with("[open_preview]") || text.starts_with("[Preview:") {
             let _ = sse(self.out, "preview_ready", json!({}));
+        }
+        if text.starts_with("[Browser]") {
+            if let Some(url) = text
+                .lines()
+                .find_map(|line| line.strip_prefix("URL: "))
+                .filter(|url| url.starts_with("https://"))
+            {
+                let _ = sse(self.out, "browser_ready", json!({"url": url}));
+            }
+        }
+        if let Some(confirmation) = browser::take_confirmation() {
+            let _ = sse(
+                self.out,
+                "browser_confirmation",
+                json!({
+                    "site": confirmation.site,
+                    "action": confirmation.action,
+                    "selector": confirmation.selector,
+                }),
+            );
         }
         // หลังรันเครื่องมือไฟล์สำเร็จ → ส่งเหตุการณ์ "change" ให้ UI อัปเดตกล่องสรุป
         if let Some(e) = tools::take_last_change() {

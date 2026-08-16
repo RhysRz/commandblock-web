@@ -542,6 +542,14 @@
   .emptyhint { color: var(--muted); font-size: 12.5px; padding: 16px; line-height: 1.6; }
   .fileview { border-top: 1px solid var(--border); flex: 1; min-height: 0; overflow: auto; padding: 8px 10px; font-size: 11.5px; white-space: pre-wrap; font-family: Consolas, monospace; }
   iframe#previewFrame { flex: 1; min-height: 0; border: none; background: #fff; border-radius: 0 0 8px 8px; margin: 0 8px 8px; }
+  #previewNativeViewport {
+    flex: 1; min-height: 0; margin: 0 8px 8px; border: 1px solid var(--border); border-radius: 0 0 8px 8px;
+    background: #fff; color: #293043; display: grid; place-items: center; font-size: 12px;
+  }
+  #previewNativeViewport[hidden] { display: none; }
+  .preview-browser-controls { display: inline-flex; gap: 4px; align-items: center; }
+  .preview-browser-controls button { min-width: 29px; padding: 0 8px; font-size: 15px; }
+  .preview-browser-status { color: var(--muted); font-size: 11px; white-space: nowrap; }
   .preview-tabbar {
     display: flex; align-items: end; gap: 5px; min-height: 42px;
     padding: 7px 8px 0; border-bottom: 1px solid var(--border);
@@ -1279,11 +1287,18 @@
       </div>
       <div class="pane-toolbar">
         <input class="preview-url" id="previewUrlInput" type="url" inputmode="url" autocomplete="off" placeholder="วาง URL https:// หรือ Preview local แล้วกด Enter">
+        <span class="preview-browser-controls" aria-label="ควบคุมเบราว์เซอร์ใน Preview">
+          <button id="previewBrowserBack" type="button" title="ย้อนกลับ" aria-label="ย้อนกลับ">←</button>
+          <button id="previewBrowserForward" type="button" title="ถัดไป" aria-label="ถัดไป">→</button>
+          <button id="previewBrowserReload" type="button" title="รีเฟรช Native Browser" aria-label="รีเฟรช Native Browser">↻</button>
+        </span>
+        <span class="preview-browser-status" id="previewBrowserMode">Preview</span>
         <button onclick="refreshPreview()">↻ รีเฟรช</button>
         <button onclick="openPreviewBrowser()">เปิดในเบราว์เซอร์</button>
       </div>
       <div class="emptyhint" id="previewHint">ยังไม่มีพรีวิว — บอก CommandBlock ว่า "สร้างหน้าเว็บแล้วเปิดพรีวิวให้ดู"</div>
       <div class="preview-frame-fallback" id="previewFrameFallback" hidden>เว็บนี้ไม่อนุญาตให้แสดงในกรอบ Preview — ใช้ปุ่ม <b>เปิดในเบราว์เซอร์</b> ด้านบนแทนได้</div>
+      <div id="previewNativeViewport" hidden>กำลังเปิด Native Browser…</div>
       <iframe id="previewFrame" hidden></iframe>
     </div>
 
@@ -1514,8 +1529,65 @@ const previewUrlInput = document.getElementById("previewUrlInput");
 const previewFrame = document.getElementById("previewFrame");
 const previewHint = document.getElementById("previewHint");
 const previewFrameFallback = document.getElementById("previewFrameFallback");
+const previewNativeViewport = document.getElementById("previewNativeViewport");
+const previewBrowserBack = document.getElementById("previewBrowserBack");
+const previewBrowserForward = document.getElementById("previewBrowserForward");
+const previewBrowserReload = document.getElementById("previewBrowserReload");
+const previewBrowserMode = document.getElementById("previewBrowserMode");
 let previewTabState = previewTabsApi ? previewTabsApi.restore(sessionStorage) : { tabs: [], activeId: "" };
 let observedPreviewUrl = "";
+let nativeBrowserActive = false;
+let nativeBrowserUrl = "";
+let nativeBrowserSyncQueued = false;
+
+function isNativeBrowserUrl(url){ return /^https:\/\//i.test(String(url || "")); }
+async function nativeBrowserRequest(payload){
+  const response = await fetch("/api/browser", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+  const result = await response.json().catch(()=>({ok:false,error:"Native Browser ตอบข้อมูลไม่ถูกต้อง"}));
+  if(!response.ok || !result.ok) throw new Error(result.error || "Native Browser ทำงานไม่สำเร็จ");
+  return result;
+}
+function nativeBrowserBounds(){
+  const rect = previewNativeViewport.getBoundingClientRect();
+  const scale = window.devicePixelRatio || 1;
+  return { x:Math.round(rect.left * scale), y:Math.round(rect.top * scale), width:Math.max(1,Math.round(rect.width * scale)), height:Math.max(1,Math.round(rect.height * scale)) };
+}
+function syncNativeBrowserBounds(){
+  if(!nativeBrowserActive || previewNativeViewport.hidden || document.getElementById("pane-preview").classList.contains("active") === false) return;
+  if(nativeBrowserSyncQueued) return;
+  nativeBrowserSyncQueued = true;
+  requestAnimationFrame(async()=>{
+    nativeBrowserSyncQueued = false;
+    try { await nativeBrowserRequest({action:"bounds", ...nativeBrowserBounds()}); } catch (_) {}
+  });
+}
+async function showNativeBrowser(url){
+  nativeBrowserActive = true;
+  nativeBrowserUrl = url;
+  try {
+    const result = await nativeBrowserRequest({action:"show", url, ...nativeBrowserBounds()});
+    if(result.url) updateActivePreviewUrl(result.url);
+  } catch(error) {
+    nativeBrowserActive = false;
+    previewNativeViewport.hidden = true;
+    previewFrameFallback.hidden = false;
+    previewFrameFallback.textContent = "เปิด Native Browser ไม่สำเร็จ: " + error.message;
+  }
+}
+async function hideNativeBrowser(){
+  nativeBrowserActive = false;
+  nativeBrowserUrl = "";
+  try { await nativeBrowserRequest({action:"hide"}); } catch (_) {}
+}
+function updateActivePreviewUrl(url){
+  const active = activePreviewTab();
+  if(!active || !url || active.url === url) return;
+  active.url = url;
+  if(previewTabsApi?.labelFor) active.title = previewTabsApi.labelFor(url);
+  savePreviewTabs();
+  renderPreviewTabs();
+}
+function activeNativeBrowser(){ return nativeBrowserActive && isNativeBrowserUrl(activePreviewTab()?.url); }
 
 function activePreviewTab(){ return previewTabState.tabs.find(tab => tab.id === previewTabState.activeId) || null; }
 function savePreviewTabs(){ previewTabsApi?.persist(sessionStorage, previewTabState); }
@@ -1546,8 +1618,20 @@ function renderPreviewTabs(){
 function renderPreviewFrame(){
   const active = activePreviewTab();
   const url = active?.url || "";
-  if (!url) { previewFrame.hidden = true; previewHint.hidden = false; previewFrameFallback.hidden = true; return; }
-  previewHint.hidden = true; previewFrame.hidden = false; previewFrameFallback.hidden = true;
+  if (!url) { previewFrame.hidden = true; previewNativeViewport.hidden = true; previewHint.hidden = false; previewFrameFallback.hidden = true; hideNativeBrowser(); return; }
+  previewHint.hidden = true; previewFrameFallback.hidden = true;
+  if(isNativeBrowserUrl(url)) {
+    previewBrowserMode.textContent = "Native Browser";
+    previewFrame.hidden = true;
+    previewNativeViewport.hidden = false;
+    if(!nativeBrowserActive || nativeBrowserUrl !== url) showNativeBrowser(url);
+    else syncNativeBrowserBounds();
+    return;
+  }
+  previewNativeViewport.hidden = true;
+  previewBrowserMode.textContent = "Preview local";
+  hideNativeBrowser();
+  previewFrame.hidden = false;
   if (previewFrame.dataset.previewUrl !== url) {
     previewFrame.dataset.previewUrl = url;
     previewFrame.src = url;
@@ -1583,6 +1667,11 @@ function navigatePreviewInput(){
 }
 document.getElementById("previewTabAdd").addEventListener("click", createPreviewTab);
 previewUrlInput.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); navigatePreviewInput(); } });
+previewBrowserBack.addEventListener("click", async()=>{ if(!activeNativeBrowser()) return; try { const r=await nativeBrowserRequest({action:"back"}); updateActivePreviewUrl(r.url); } catch(e){ toast(e.message,"warn"); } });
+previewBrowserForward.addEventListener("click", async()=>{ if(!activeNativeBrowser()) return; try { const r=await nativeBrowserRequest({action:"forward"}); updateActivePreviewUrl(r.url); } catch(e){ toast(e.message,"warn"); } });
+previewBrowserReload.addEventListener("click", async()=>{ if(!activeNativeBrowser()) return; try { await nativeBrowserRequest({action:"reload"}); } catch(e){ toast(e.message,"warn"); } });
+new ResizeObserver(syncNativeBrowserBounds).observe(previewNativeViewport);
+window.addEventListener("resize", syncNativeBrowserBounds);
 renderPreviewTabs();
 function resumeFromCheckpoint(){ input.value="ทำต่อจากจุดที่บันทึกไว้"; autoGrow(); send(); }
 
@@ -2386,6 +2475,12 @@ async function send(){
             else if(ev === "preview_ready"){
               switchTab("preview"); refreshPreview();
             }
+            else if(ev === "browser_ready" && obj?.url){
+              addPreviewTab(obj.url); switchTab("preview");
+            }
+            else if(ev === "browser_confirmation" && obj){
+              showBrowserConfirmation(obj);
+            }
             else if(ev==="change"&&obj&&obj.path){
               recordTurnChange(obj, ensureWorkSegment().bubble); scrollBottom();
             }
@@ -2471,6 +2566,7 @@ function switchTab(name){
   if(name==="changes") loadChanges();
   if(name==="queue") loadQueue();
   if(name==="preview") refreshPreview();
+  else if(nativeBrowserActive) hideNativeBrowser();
   if(name==="notes") loadNotes();
   /* มือถือ: เปิด panel เป็น overlay */
   if (isMobileView()) setMobileMenuDrawer(true);
@@ -2696,6 +2792,10 @@ async function refreshPreview(){
   } catch (_) {}
   const active = activePreviewTab();
   if(active?.url){
+    if(activeNativeBrowser()) {
+      try { await nativeBrowserRequest({action:"reload"}); } catch (_) {}
+      return;
+    }
     previewFrame.dataset.previewUrl = "";
     renderPreviewFrame();
   }
@@ -2812,7 +2912,7 @@ document.getElementById("fb").addEventListener("click",()=>{
   </div>
 </div>
 
-<div class="modal" id="confirmModal" hidden>
+<div class="modal" id="confirmModal" data-browser-dialog="browserConfirmDialog" hidden>
   <div class="modal-card confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
     <div class="modal-head"><span class="modal-title" id="confirmTitle">ยืนยันการทำรายการ</span></div>
     <div class="confirm-body"><span class="confirm-mark" aria-hidden="true">?</span><p class="confirm-copy" id="confirmBody"></p></div>
@@ -2960,6 +3060,7 @@ function renderPluginCatalog(query){
 
 /* ---------- Confirm dialog: ใช้แทน browser/WebView confirm ---------- */
 const confirmModal = document.getElementById("confirmModal");
+const browserConfirmDialog = confirmModal;
 const confirmTitle = document.getElementById("confirmTitle");
 const confirmBody = document.getElementById("confirmBody");
 const confirmCancel = document.getElementById("confirmCancel");
@@ -2981,6 +3082,19 @@ function confirmAction(options){
   confirmModal.hidden = false;
   window.setTimeout(()=>confirmCancel.focus(), 0);
   return new Promise(resolve=>{ pendingConfirmation = { resolve }; });
+}
+async function showBrowserConfirmation(request){
+  const approved = await confirmAction({
+    title:"ยืนยันการทำรายการบนเว็บไซต์",
+    message:"CommandBlock ต้องการ “" + (request.action || "ทำรายการ") + "” บน " + (request.site || "เว็บไซต์นี้") + " ยืนยันหรือไม่?",
+    confirmLabel:"ยืนยัน",
+  });
+  try {
+    await nativeBrowserRequest({action: approved ? "confirm" : "cancel"});
+    toast(approved ? "ยืนยันการทำรายการใน Native Browser แล้ว" : "ยกเลิกการทำรายการแล้ว", approved ? "ok" : "warn");
+  } catch(error) {
+    toast(error.message || "จัดการคำขอยืนยัน Browser ไม่สำเร็จ", "err");
+  }
 }
 confirmCancel.addEventListener("click", ()=>settleConfirmation(false));
 confirmApprove.addEventListener("click", ()=>settleConfirmation(true));

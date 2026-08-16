@@ -24,3 +24,13 @@ test('desktop GUI owns a child WebView and routes browser commands on its UI thr
   assert.match(gui, /register_bridge/);
   assert.match(gui, /"\/api\/browser"/);
 });
+
+test('Preview reports native browser bounds and exposes confirmation-safe browser controls', () => {
+  const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
+
+  assert.match(ui, /id="previewBrowserBack"/);
+  assert.match(ui, /id="previewBrowserForward"/);
+  assert.match(ui, /ResizeObserver/);
+  assert.match(ui, /browserConfirmDialog/);
+  assert.match(ui, /\/api\/browser/);
+});

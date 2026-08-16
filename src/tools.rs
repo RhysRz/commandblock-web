@@ -232,7 +232,7 @@ pub fn tool_schemas() -> Vec<Value> {
         json!({"type":"function","function":{
             "name":"browser_click",
             "description":"คลิกองค์ประกอบใน Native Browser ด้วย selector ที่ได้จาก browser_inspect; ถ้าเป็นการส่ง/โพสต์/ลบ/ซื้อ ระบบจะคืนสถานะให้ผู้ใช้ยืนยันก่อน",
-            "parameters":{"type":"object","properties":{"selector":{"type":"string","description":"selector จาก browser_inspect"},"confirmed":{"type":"boolean","description":"true เฉพาะหลังผู้ใช้ยืนยันการกระทำภายนอกแล้ว"}},"required":["selector"]}
+            "parameters":{"type":"object","properties":{"selector":{"type":"string","description":"selector จาก browser_inspect"}},"required":["selector"]}
         }}),
         json!({"type":"function","function":{
             "name":"browser_fill",
@@ -1277,15 +1277,9 @@ fn browser_click(args: &Value) -> String {
         Ok(selector) => selector,
         Err(error) => return format!("[Browser] {error}"),
     };
-    let confirmed = args
-        .get("confirmed")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    browser::dispatch(BrowserCommand::Click {
-        selector,
-        confirmed,
-    })
-    .to_tool_text()
+    let reply = browser::dispatch(BrowserCommand::Click { selector });
+    browser::record_confirmation(&reply);
+    reply.to_tool_text()
 }
 
 fn browser_fill(args: &Value) -> String {

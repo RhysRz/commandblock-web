@@ -44,6 +44,7 @@ pub enum BrowserCommand {
     Inspect,
     Click { selector: String },
     ConfirmPending,
+    CancelPending,
     Fill { selector: String, value: String },
     Press { key: String },
     Scroll { direction: ScrollDirection },
@@ -96,7 +97,7 @@ impl BrowserReply {
                 action,
                 selector,
             } => format!(
-                "[Browser: ต้องยืนยัน] เว็บไซต์ {site} กำลังจะ {action} ({selector}) — ขอให้ผู้ใช้ยืนยันในหน้าต่าง CommandBlock ก่อน แล้วจึงเรียก browser_click ซ้ำพร้อม confirmed=true"
+                "[Browser: ต้องยืนยัน] เว็บไซต์ {site} กำลังจะ {action} ({selector}) — รอผู้ใช้ยืนยันในหน้าต่าง CommandBlock"
             ),
             Self::Error(message) => format!("[Browser] {message}"),
         }
@@ -123,6 +124,36 @@ impl BrowserReply {
             Self::Error(message) => json!({"ok": false, "error": message}),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserConfirmation {
+    pub site: String,
+    pub action: String,
+    pub selector: String,
+}
+
+fn confirmation_slot() -> &'static Mutex<Option<BrowserConfirmation>> {
+    static SLOT: OnceLock<Mutex<Option<BrowserConfirmation>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(None))
+}
+
+/// ส่งคำขอยืนยันจาก worker ของ AI ไปยัง UI โดยไม่เปิดทางให้ AI ยืนยันเอง.
+pub fn record_confirmation(reply: &BrowserReply) {
+    let BrowserReply::ConfirmationRequired { site, action, selector } = reply else {
+        return;
+    };
+    if let Ok(mut slot) = confirmation_slot().lock() {
+        *slot = Some(BrowserConfirmation {
+            site: site.clone(),
+            action: action.clone(),
+            selector: selector.clone(),
+        });
+    }
+}
+
+pub fn take_confirmation() -> Option<BrowserConfirmation> {
+    confirmation_slot().lock().ok().and_then(|mut slot| slot.take())
 }
 
 /// สะพานแบบ thread-safe จาก worker ของ AI ไปยัง native UI thread.
