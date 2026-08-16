@@ -8,12 +8,14 @@ const adapterPath = resolve(root, 'web/cloud-adapter.js');
 const recoveryPath = resolve(root, 'web/chat-recovery.js');
 const timelinePath = resolve(root, 'web/chat-timeline.js');
 const sessionStorePath = resolve(root, 'web/session-store.js');
+const previewTabsPath = resolve(root, 'web/preview-tabs.js');
 const sitePath = resolve(root, 'site');
 
 if (!existsSync(adapterPath)) throw new Error('Missing web/cloud-adapter.js');
 if (!existsSync(recoveryPath)) throw new Error('Missing web/chat-recovery.js');
 if (!existsSync(timelinePath)) throw new Error('Missing web/chat-timeline.js');
 if (!existsSync(sessionStorePath)) throw new Error('Missing web/session-store.js');
+if (!existsSync(previewTabsPath)) throw new Error('Missing web/preview-tabs.js');
 
 rmSync(sitePath, { recursive: true, force: true });
 mkdirSync(sitePath, { recursive: true });
@@ -40,3 +42,4 @@ if (existsSync(resolve(root, 'assets'))) cpSync(resolve(root, 'assets'), resolve
 mkdirSync(resolve(sitePath, 'assets'), { recursive: true });
 copyFileSync(timelinePath, resolve(sitePath, 'assets', 'chat-timeline.js'));
 copyFileSync(sessionStorePath, resolve(sitePath, 'assets', 'session-store.js'));
+copyFileSync(previewTabsPath, resolve(sitePath, 'assets', 'preview-tabs.js'));

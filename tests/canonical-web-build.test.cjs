@@ -16,5 +16,7 @@ test('web build publishes the canonical CommandBlock UI and inserts the adapter 
   assert.match(output, /src="\.\/cloud-adapter\.js"/);
   assert.ok(output.indexOf('cloud-adapter.js') < output.indexOf('<script>'));
   assert.match(output, /src="\.\/assets\/buff-command-block\.png"/);
+  assert.match(output, /src="\.\/assets\/preview-tabs\.js"/);
   assert.ok(fs.existsSync(path.join(root, 'site', 'assets', 'buff-command-block.png')));
+  assert.ok(fs.existsSync(path.join(root, 'site', 'assets', 'preview-tabs.js')));
 });

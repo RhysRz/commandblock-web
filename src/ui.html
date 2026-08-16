@@ -541,7 +541,37 @@
   .pane-toolbar button:hover { border-color: var(--accent); }
   .emptyhint { color: var(--muted); font-size: 12.5px; padding: 16px; line-height: 1.6; }
   .fileview { border-top: 1px solid var(--border); flex: 1; min-height: 0; overflow: auto; padding: 8px 10px; font-size: 11.5px; white-space: pre-wrap; font-family: Consolas, monospace; }
-  iframe#previewFrame { flex: 1; border: none; background: #fff; border-radius: 0 0 8px 8px; margin: 0 8px 8px; }
+  iframe#previewFrame { flex: 1; min-height: 0; border: none; background: #fff; border-radius: 0 0 8px 8px; margin: 0 8px 8px; }
+  .preview-tabbar {
+    display: flex; align-items: end; gap: 5px; min-height: 42px;
+    padding: 7px 8px 0; border-bottom: 1px solid var(--border);
+    background: rgba(13, 10, 28, .64); overflow: hidden;
+  }
+  #previewTabs { display: flex; align-items: end; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  #previewTabs::-webkit-scrollbar { display: none; }
+  .preview-tab {
+    position: relative; display: flex; align-items: center; gap: 7px; min-width: 142px; max-width: 230px;
+    height: 34px; padding: 0 8px 0 11px; color: var(--muted); background: rgba(64, 43, 105, .42);
+    border: 1px solid transparent; border-bottom: none; border-radius: 9px 9px 0 0; cursor: pointer;
+    font-size: 12px; text-align: left; transition: background .15s, color .15s;
+  }
+  .preview-tab:hover { color: var(--text); background: rgba(89, 59, 143, .48); }
+  .preview-tab.active { color: var(--text); background: var(--panel); border-color: var(--border); box-shadow: inset 0 2px 0 var(--accent); }
+  .preview-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .preview-tab-close {
+    display: grid; place-items: center; width: 20px; height: 20px; flex: none; padding: 0; border: 0;
+    border-radius: 5px; color: var(--muted); background: transparent; cursor: pointer; font-size: 15px; line-height: 1;
+  }
+  .preview-tab-close:hover { color: var(--text); background: rgba(255,255,255,.1); }
+  #previewTabAdd {
+    width: 31px; height: 31px; flex: none; border: 1px solid var(--border); border-radius: 8px 8px 0 0;
+    color: var(--text); background: rgba(78, 51, 128, .48); cursor: pointer; font-size: 19px; line-height: 1;
+  }
+  #previewTabAdd:hover { border-color: var(--accent); background: rgba(112, 73, 181, .66); }
+  .preview-url { flex: 1; min-width: 0; height: 29px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; outline: none; background: var(--code-bg); color: var(--text); font-size: 12px; }
+  .preview-url:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(139,108,246,.15); }
+  .preview-frame-fallback { margin: 0 8px 8px; padding: 13px; border: 1px solid var(--border); border-radius: 0 0 8px 8px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+  .preview-frame-fallback code { color: var(--text); overflow-wrap: anywhere; }
   textarea#notesBox { flex: 1; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; margin: 8px; padding: 10px; color: var(--text); font-family: Consolas, monospace; font-size: 12.5px; resize: none; outline: none; }
   .err { color: var(--err); }
 
@@ -1243,11 +1273,17 @@
 
     <!-- Preview -->
     <div class="pane" id="pane-preview">
+      <div class="preview-tabbar">
+        <div id="previewTabs" role="tablist" aria-label="แท็บพรีวิว"></div>
+        <button id="previewTabAdd" type="button" title="เปิดแท็บพรีวิวใหม่" aria-label="เปิดแท็บพรีวิวใหม่">+</button>
+      </div>
       <div class="pane-toolbar">
+        <input class="preview-url" id="previewUrlInput" type="url" inputmode="url" autocomplete="off" placeholder="วาง URL https:// หรือ Preview local แล้วกด Enter">
         <button onclick="refreshPreview()">↻ รีเฟรช</button>
         <button onclick="openPreviewBrowser()">เปิดในเบราว์เซอร์</button>
       </div>
       <div class="emptyhint" id="previewHint">ยังไม่มีพรีวิว — บอก CommandBlock ว่า "สร้างหน้าเว็บแล้วเปิดพรีวิวให้ดู"</div>
+      <div class="preview-frame-fallback" id="previewFrameFallback" hidden>เว็บนี้ไม่อนุญาตให้แสดงในกรอบ Preview — ใช้ปุ่ม <b>เปิดในเบราว์เซอร์</b> ด้านบนแทนได้</div>
       <iframe id="previewFrame" hidden></iframe>
     </div>
 
@@ -1291,6 +1327,7 @@
 
 <script src="/assets/chat-timeline.js"></script>
 <script src="/assets/session-store.js"></script>
+<script src="/assets/preview-tabs.js"></script>
 <script>
 "use strict";
 
@@ -1471,6 +1508,82 @@ const wrap = chat.querySelector(".wrap");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 let state = { preview_url: "" };
+const previewTabsApi = window.CommandBlockPreviewTabs;
+const previewTabsEl = document.getElementById("previewTabs");
+const previewUrlInput = document.getElementById("previewUrlInput");
+const previewFrame = document.getElementById("previewFrame");
+const previewHint = document.getElementById("previewHint");
+const previewFrameFallback = document.getElementById("previewFrameFallback");
+let previewTabState = previewTabsApi ? previewTabsApi.restore(sessionStorage) : { tabs: [], activeId: "" };
+let observedPreviewUrl = "";
+
+function activePreviewTab(){ return previewTabState.tabs.find(tab => tab.id === previewTabState.activeId) || null; }
+function savePreviewTabs(){ previewTabsApi?.persist(sessionStorage, previewTabState); }
+function previewUrlAllowed(url){ return /^https:\/\//.test(url) || /^http:\/\/127\.0\.0\.1(?::\d+)?\//.test(url); }
+function renderPreviewTabs(){
+  if (!previewTabsEl) return;
+  previewTabsEl.replaceChildren();
+  previewTabState.tabs.forEach(tab => {
+    const item = document.createElement("div");
+    item.className = "preview-tab" + (tab.id === previewTabState.activeId ? " active" : "");
+    item.setAttribute("role", "tab");
+    item.setAttribute("aria-selected", String(tab.id === previewTabState.activeId));
+    item.title = tab.url || "New tab";
+    const label = document.createElement("span"); label.className = "preview-tab-label";
+    label.textContent = tab.title;
+    const close = document.createElement("button"); close.type = "button"; close.className = "preview-tab-close";
+    close.textContent = "×"; close.setAttribute("aria-label", "ปิดแท็บ " + tab.title);
+    close.addEventListener("click", ev => { ev.stopPropagation(); closePreviewTab(tab.id); });
+    item.append(label, close);
+    item.addEventListener("click", () => selectPreviewTab(tab.id));
+    previewTabsEl.appendChild(item);
+  });
+  const active = activePreviewTab();
+  previewUrlInput.value = active?.url || "";
+  previewUrlInput.placeholder = active ? "วาง URL ใหม่แล้วกด Enter" : "วาง URL https:// หรือ Preview local แล้วกด Enter";
+  renderPreviewFrame();
+}
+function renderPreviewFrame(){
+  const active = activePreviewTab();
+  const url = active?.url || "";
+  if (!url) { previewFrame.hidden = true; previewHint.hidden = false; previewFrameFallback.hidden = true; return; }
+  previewHint.hidden = true; previewFrame.hidden = false; previewFrameFallback.hidden = true;
+  if (previewFrame.dataset.previewUrl !== url) {
+    previewFrame.dataset.previewUrl = url;
+    previewFrame.src = url;
+  }
+}
+previewFrame.addEventListener("load", () => { previewFrameFallback.hidden = true; });
+previewFrame.addEventListener("error", () => { previewFrameFallback.hidden = false; });
+function addPreviewTab(url){
+  if (!previewTabsApi || !previewUrlAllowed(String(url || "").trim())) return false;
+  previewTabState = previewTabsApi.add(previewTabState, String(url).trim());
+  savePreviewTabs(); renderPreviewTabs(); return true;
+}
+function createPreviewTab(){
+  if (!previewTabsApi) return;
+  previewTabState = previewTabsApi.blank(previewTabState);
+  savePreviewTabs(); renderPreviewTabs(); previewUrlInput.focus();
+}
+function selectPreviewTab(id){
+  previewTabState = previewTabsApi.select(previewTabState, id);
+  savePreviewTabs(); renderPreviewTabs();
+}
+function closePreviewTab(id){
+  previewTabState = previewTabsApi.close(previewTabState, id);
+  savePreviewTabs(); renderPreviewTabs();
+}
+function navigatePreviewInput(){
+  const value = previewUrlInput.value.trim();
+  if (!previewUrlAllowed(value)) { toast("ใช้ URL https:// หรือ Preview local ของ CommandBlock เท่านั้น", "warn"); return; }
+  const active = activePreviewTab();
+  if (active?.kind === "blank") previewTabState = previewTabsApi.close(previewTabState, active.id);
+  previewTabState = previewTabsApi.add(previewTabState, value);
+  state.preview_url = value; savePreviewTabs(); renderPreviewTabs();
+}
+document.getElementById("previewTabAdd").addEventListener("click", createPreviewTab);
+previewUrlInput.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); navigatePreviewInput(); } });
+renderPreviewTabs();
 function resumeFromCheckpoint(){ input.value="ทำต่อจากจุดที่บันทึกไว้"; autoGrow(); send(); }
 
 /* ---------- เครดิต DeepSeek และ token (เก็บเฉพาะเบราว์เซอร์นี้) ---------- */
@@ -1520,7 +1633,7 @@ fetch("/api/state").then(r => r.json()).then(s => {
   document.getElementById("statsRight").textContent =
     (s.skill_count || 0) + " ทักษะ · " + (s.session_messages || 0) + " ข้อความจำ";
   setFolder(s.folder, s.folder_path);
-  if (s.preview_url) { document.getElementById("previewHint").hidden = true; }
+  if (s.preview_url) { observedPreviewUrl = s.preview_url; addPreviewTab(s.preview_url); }
   // ถ้ามีแผนงานค้างอยู่ → แสดงกล่อง To-dos เป็นข้อความแรก
   if (s.plan) {
     const holder = document.createElement("div"); holder.className="msg assistant";
@@ -2271,7 +2384,7 @@ async function send(){
               scrollBottom();
             }
             else if(ev === "preview_ready"){
-              switchTab("preview");
+              switchTab("preview"); refreshPreview();
             }
             else if(ev==="change"&&obj&&obj.path){
               recordTurnChange(obj, ensureWorkSegment().bubble); scrollBottom();
@@ -2570,21 +2683,27 @@ async function loadQueue(){
 
 /* ---------- preview ---------- */
 async function refreshPreview(){
-  const frame=document.getElementById("previewFrame");
-  const hint=document.getElementById("previewHint");
   try {
     const latest = await fetch("/api/state").then(r=>r.ok ? r.json() : null);
-    if(latest && typeof latest.preview_url === "string") state.preview_url = latest.preview_url;
+    if(latest && typeof latest.preview_url === "string") {
+      state.preview_url = latest.preview_url;
+      if(latest.preview_url && latest.preview_url !== observedPreviewUrl){
+        observedPreviewUrl = latest.preview_url;
+        addPreviewTab(latest.preview_url);
+        return;
+      }
+    }
   } catch (_) {}
-  if(state.preview_url){
-    hint.hidden=true; frame.hidden=false;
-    if(frame.src!==state.preview_url) frame.src=state.preview_url;
-  } else {
-    frame.hidden=true; hint.hidden=false;
+  const active = activePreviewTab();
+  if(active?.url){
+    previewFrame.dataset.previewUrl = "";
+    renderPreviewFrame();
   }
 }
 function openPreviewBrowser(){
-  if(state.preview_url) window.open(state.preview_url,"_blank");
+  const url = activePreviewTab()?.url || state.preview_url;
+  if(url) window.open(url,"_blank","noopener");
+  else toast("ยังไม่มี URL สำหรับเปิดพรีวิว", "warn");
 }
 
 /* ---------- notes ---------- */

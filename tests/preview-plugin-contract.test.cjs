@@ -34,7 +34,7 @@ test('Preview tools keep local previews in CommandBlock and retain an explicit b
   assert.match(ui, /obj\.name === "open_preview" \|\| String\(obj\.name\|\|""\)\.startsWith\("preview_"\)/);
   assert.match(gui, /"preview_ready"/);
   assert.match(ui, /ev === "preview_ready"/);
-  assert.match(ui, /window\.open\(state\.preview_url,"_blank"\)/);
+  assert.match(ui, /window\.open\(url,"_blank","noopener"\)/);
 });
 
 test('the preview command accepts a published HTTPS URL without weakening local preview tools', () => {
@@ -48,6 +48,18 @@ test('the preview command accepts a published HTTPS URL without weakening local 
   assert.match(gui, /"\/preview"\s*=>\s*tools::preview_command/);
   assert.match(ui, /const requestedPreview\s*=\s*\/\^\\\/preview\\b\/\.test\(text\)/);
   assert.match(tools, /http:\/\/127\.0\.0\.1:/);
+});
+
+test('Preview exposes browser-style tab controls backed by the shared tab-state helper', () => {
+  const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
+
+  assert.match(ui, /id="previewTabs"/);
+  assert.match(ui, /id="previewTabAdd"/);
+  assert.match(ui, /id="previewUrlInput"/);
+  assert.match(ui, /id="previewFrameFallback"/);
+  assert.match(ui, /function renderPreviewTabs/);
+  assert.match(ui, /CommandBlockPreviewTabs/);
+  assert.match(ui, /\/assets\/preview-tabs\.js/);
 });
 
 test('desktop right workspace has a persistent accessible resize handle', () => {
