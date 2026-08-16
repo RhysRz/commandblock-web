@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod browser;
 pub mod cloud;
 pub mod connector;
 pub mod diagnostics;
