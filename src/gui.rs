@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 const UI_HTML: &str = include_str!("ui.html");
 const CHAT_TIMELINE_JS: &str = include_str!("../web/chat-timeline.js");
 const SESSION_STORE_JS: &str = include_str!("../web/session-store.js");
+const PREVIEW_TABS_JS: &str = include_str!("../web/preview-tabs.js");
 const COMMAND_BLOCK_ICON_PNG: &[u8] = include_bytes!("../assets/buff-command-block.png");
 const SETTINGS_FILE: &str = ".freebuff/settings.json";
 const STARTUP_LOG_FILE: &str = ".freebuff/startup_log.json";
@@ -775,6 +776,12 @@ fn handle(
             200,
             "application/javascript; charset=utf-8",
             SESSION_STORE_JS.as_bytes(),
+        ),
+        ("GET", "/assets/preview-tabs.js") => respond(
+            &mut out,
+            200,
+            "application/javascript; charset=utf-8",
+            PREVIEW_TABS_JS.as_bytes(),
         ),
         ("GET", "/favicon.ico") => respond(&mut out, 204, "text/plain", b""),
         ("GET", "/api/state") => {

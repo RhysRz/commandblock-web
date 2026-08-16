@@ -52,6 +52,7 @@ test('the preview command accepts a published HTTPS URL without weakening local 
 
 test('Preview exposes browser-style tab controls backed by the shared tab-state helper', () => {
   const ui = fs.readFileSync(path.join(root, 'src', 'ui.html'), 'utf8');
+  const gui = fs.readFileSync(path.join(root, 'src', 'gui.rs'), 'utf8');
 
   assert.match(ui, /id="previewTabs"/);
   assert.match(ui, /id="previewTabAdd"/);
@@ -60,6 +61,8 @@ test('Preview exposes browser-style tab controls backed by the shared tab-state 
   assert.match(ui, /function renderPreviewTabs/);
   assert.match(ui, /CommandBlockPreviewTabs/);
   assert.match(ui, /\/assets\/preview-tabs\.js/);
+  assert.match(gui, /const PREVIEW_TABS_JS: &str = include_str!\("\.\.\/web\/preview-tabs\.js"\)/);
+  assert.match(gui, /\("GET", "\/assets\/preview-tabs\.js"\)/);
 });
 
 test('desktop right workspace has a persistent accessible resize handle', () => {
