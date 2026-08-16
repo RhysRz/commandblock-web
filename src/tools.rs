@@ -1,9 +1,10 @@
 //! เครื่องมือ (tools) ของ Commandblock — ใช้สำหรับส่งให้ LLM เรียกใช้
-//! 13 อย่าง: read_file, write_file, edit_file, append_file,
+//! เครื่องมือไฟล์/เทอร์มินัล/พรีวิว/Native Browser/ทักษะ
 //! list_directory, code_search, run_command, update_plan,
 //! web_search, read_url, open_preview, list_skills, load_skill
 
 use serde_json::{json, Value};
+use crate::browser::{self, BrowserCommand, ScrollDirection};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -89,6 +90,12 @@ pub const TOOL_NAMES: &[&str] = &[
     "preview_inspect",
     "preview_click",
     "preview_fill",
+    "browser_open",
+    "browser_inspect",
+    "browser_click",
+    "browser_fill",
+    "browser_press",
+    "browser_scroll",
     "list_skills",
     "load_skill",
 ];
@@ -213,6 +220,36 @@ pub fn tool_schemas() -> Vec<Value> {
             "parameters":{"type":"object","properties":{"selector":{"type":"string"},"value":{"type":"string"}},"required":["selector","value"]}
         }}),
         json!({"type":"function","function":{
+            "name":"browser_open",
+            "description":"เปิดเว็บไซต์ HTTPS สาธารณะใน Native Browser ของแท็บ Preview ใช้สำหรับเว็บที่ไม่ยอมแสดงใน iframe เช่น Google, YouTube, Facebook และ Instagram",
+            "parameters":{"type":"object","properties":{"url":{"type":"string","description":"URL https:// สาธารณะ"}},"required":["url"]}
+        }}),
+        json!({"type":"function","function":{
+            "name":"browser_inspect",
+            "description":"อ่านชื่อหน้า URL ข้อความที่เห็น และรายการองค์ประกอบที่ AI คลิก/กรอกได้จาก Native Browser ปัจจุบัน ต้องเรียกก่อน browser_click หรือ browser_fill",
+            "parameters":{"type":"object","properties":{},"required":[]}
+        }}),
+        json!({"type":"function","function":{
+            "name":"browser_click",
+            "description":"คลิกองค์ประกอบใน Native Browser ด้วย selector ที่ได้จาก browser_inspect; ถ้าเป็นการส่ง/โพสต์/ลบ/ซื้อ ระบบจะคืนสถานะให้ผู้ใช้ยืนยันก่อน",
+            "parameters":{"type":"object","properties":{"selector":{"type":"string","description":"selector จาก browser_inspect"},"confirmed":{"type":"boolean","description":"true เฉพาะหลังผู้ใช้ยืนยันการกระทำภายนอกแล้ว"}},"required":["selector"]}
+        }}),
+        json!({"type":"function","function":{
+            "name":"browser_fill",
+            "description":"กรอกข้อมูลลงช่องใน Native Browser ด้วย selector จาก browser_inspect; ห้ามกรอกรหัสผ่านหรือข้อมูลลับโดยเดาเอง",
+            "parameters":{"type":"object","properties":{"selector":{"type":"string"},"value":{"type":"string"}},"required":["selector","value"]}
+        }}),
+        json!({"type":"function","function":{
+            "name":"browser_press",
+            "description":"ส่งปุ่ม Enter, Escape หรือ Tab ไปยัง Native Browser หลังตรวจหน้าแล้ว",
+            "parameters":{"type":"object","properties":{"key":{"type":"string","enum":["Enter","Escape","Tab"]}},"required":["key"]}
+        }}),
+        json!({"type":"function","function":{
+            "name":"browser_scroll",
+            "description":"เลื่อน Native Browser ปัจจุบันขึ้นหรือลง",
+            "parameters":{"type":"object","properties":{"direction":{"type":"string","enum":["up","down"]}},"required":["direction"]}
+        }}),
+        json!({"type":"function","function":{
             "name":"list_skills",
             "description":"ดูรายการทักษะ (skills) ที่มีอยู่ — ทักษะคือคำแนะนำ/แนวทางเฉพาะทางที่โหลดมาใช้กับงานนั้นๆ (เช่น accessibility, api-design) เหมือนผู้ช่วย AI ระดับมืออาชีพ",
             "parameters":{"type":"object","properties":{},"required":[]}
@@ -260,6 +297,12 @@ pub fn execute(name: &str, args: &Value, plan: &mut Option<String>) -> String {
         "preview_inspect" => preview_inspect(),
         "preview_click" => preview_click(args),
         "preview_fill" => preview_fill(args),
+        "browser_open" => browser_open(args),
+        "browser_inspect" => browser::dispatch(BrowserCommand::Inspect).to_tool_text(),
+        "browser_click" => browser_click(args),
+        "browser_fill" => browser_fill(args),
+        "browser_press" => browser_press(args),
+        "browser_scroll" => browser_scroll(args),
         "list_skills" => list_skills(),
         "load_skill" => load_skill(args),
         other => format!("[เครื่องมือ] ไม่รู้จักเครื่องมือ '{other}'"),
@@ -1212,6 +1255,75 @@ fn preview_fill(args: &Value) -> String {
         Ok(url) => format!("[Preview: กรอก] เปิดแท็บ Preview ใน CommandBlock ที่ {url} แล้ว — กรุณากรอกค่าทดสอบใน {selector}"),
         Err(error) => format!("[Preview: กรอก] {error}"),
     }
+}
+
+// ---------- Native Browser (WebView2 ในแท็บ Preview) ----------
+
+fn browser_open(args: &Value) -> String {
+    let Some(url) = arg_str(args, "url") else {
+        return "[Browser] ต้องระบุ URL".to_string();
+    };
+    match browser::validate_public_https(url) {
+        Ok(url) => browser::dispatch(BrowserCommand::Navigate { url }).to_tool_text(),
+        Err(error) => format!("[Browser] {error}"),
+    }
+}
+
+fn browser_click(args: &Value) -> String {
+    let Some(raw_selector) = arg_str(args, "selector") else {
+        return "[Browser] ต้องระบุ selector จาก browser_inspect".to_string();
+    };
+    let selector = match browser::validate_selector(raw_selector) {
+        Ok(selector) => selector,
+        Err(error) => return format!("[Browser] {error}"),
+    };
+    let confirmed = args
+        .get("confirmed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    browser::dispatch(BrowserCommand::Click {
+        selector,
+        confirmed,
+    })
+    .to_tool_text()
+}
+
+fn browser_fill(args: &Value) -> String {
+    let Some(raw_selector) = arg_str(args, "selector") else {
+        return "[Browser] ต้องระบุ selector จาก browser_inspect".to_string();
+    };
+    let Some(value) = arg_str(args, "value") else {
+        return "[Browser] ต้องระบุข้อความที่ต้องการกรอก".to_string();
+    };
+    let selector = match browser::validate_selector(raw_selector) {
+        Ok(selector) => selector,
+        Err(error) => return format!("[Browser] {error}"),
+    };
+    browser::dispatch(BrowserCommand::Fill {
+        selector,
+        value: value.to_string(),
+    })
+    .to_tool_text()
+}
+
+fn browser_press(args: &Value) -> String {
+    let key = arg_str(args, "key").unwrap_or_default();
+    if !matches!(key, "Enter" | "Escape" | "Tab") {
+        return "[Browser] key ต้องเป็น Enter, Escape หรือ Tab".to_string();
+    }
+    browser::dispatch(BrowserCommand::Press {
+        key: key.to_string(),
+    })
+    .to_tool_text()
+}
+
+fn browser_scroll(args: &Value) -> String {
+    let direction = match arg_str(args, "direction").unwrap_or_default() {
+        "up" => ScrollDirection::Up,
+        "down" => ScrollDirection::Down,
+        _ => return "[Browser] direction ต้องเป็น up หรือ down".to_string(),
+    };
+    browser::dispatch(BrowserCommand::Scroll { direction }).to_tool_text()
 }
 
 fn open_preview(args: &Value) -> String {
